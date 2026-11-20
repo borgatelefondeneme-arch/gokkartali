@@ -15,7 +15,7 @@
 // =====================================================================
 window.GK_TURN = {
   meteredUygulama: "gokkartali",   // örnek: "gokkartali"
-  meteredApiKey: "4RowkkgvA8njt4xTyeMSMf_TNXF0m8sKjIFv4FN_0btcJRof",     // Metered panelindeki API Key
+  meteredApiKey: "6b00570d344deb238804b6f3",     // Metered panelindeki API Key
   // Kendi TURN sunucun varsa buraya da ekleyebilirsin:
   // { urls: "turn:sunucu.adresi:3478", username: "kullanici", credential: "sifre" }
   sunucular: []
