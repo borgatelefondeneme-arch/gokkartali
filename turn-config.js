@@ -11,8 +11,8 @@
 //  panelden takip edebilirsin, gerekirse kimliği silip yenisini oluştur.
 // =====================================================================
 window.GK_TURN = {
-  turnKullanici: "",   // Metered → Credentials → USERNAME
-  turnSifre: "",       // Metered → Credentials → PASSWORD
+  turnKullanici: "66fd6f62f11843e114ae47ec",   // Metered → Credentials → USERNAME
+  turnSifre: "T0Mh0arQVoj/Mq8C",       // Metered → Credentials → PASSWORD
   turnSunucu: "standard.relay.metered.ca",
 
   // İsteğe bağlı (gelişmiş): Metered TURN API anahtarı ile otomatik kimlik alma
