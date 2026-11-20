@@ -53,6 +53,14 @@ input{user-select:text;-webkit-user-select:text}
 .tabs{display:flex;border-bottom:1px solid var(--line)}
 .tab{flex:1;min-height:58px;font-size:17px;font-weight:700;color:var(--mut);border-bottom:3px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
 .tab span{font-size:22px}
+.tabKapat{flex:none;width:46px;min-height:58px;font-size:22px;color:var(--acc);border-bottom:3px solid transparent;border-right:1px solid var(--line)}
+.hPanel.kapali .tabBody{display:none}
+.hPanel.kapali{bottom:auto!important;height:auto!important}
+.hPanel.kapali .tabKapat{color:var(--acc2)}
+.shopRow{display:flex;align-items:center;gap:10px;padding:12px;border-radius:14px;background:var(--panel2);margin-bottom:10px}
+.shopRow .si{font-size:28px;width:44px;text-align:center}
+.shopRow .st{flex:1;min-width:0}.shopRow .st b{display:block;font-size:17px}.shopRow .st small{color:var(--mut);font-size:14px;line-height:1.2;display:block}
+.shopRow.aktif{border:2px solid var(--ok);background:rgba(62,226,122,.08)}
 .tab{font-size:15px;min-width:0}
 .swatches{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:8px}
 .swc{aspect-ratio:1;min-height:40px;border-radius:12px;border:3px solid rgba(255,255,255,.12);position:relative;box-shadow:inset 0 -6px 10px rgba(0,0,0,.25),inset 0 4px 8px rgba(255,255,255,.18)}
@@ -208,11 +216,13 @@ input{user-select:text;-webkit-user-select:text}
   <div class="info" id="info"></div>
   <div class="hPanel">
     <div class="tabs">
+      <button class="tabKapat" id="panelToggle" title="Paneli gizle / aç">▾</button>
       <button class="tab on" data-tab="planes"><span>✈️</span>Uçaklar</button>
       <button class="tab" data-tab="upgrades"><span>🔧</span>Atölye</button>
       <button class="tab" data-tab="cosmetic"><span>🎨</span>Modifiye</button>
       <button class="tab" data-tab="pilots"><span>👨‍✈️</span>Pilotlar</button>
       <button class="tab" data-tab="loadout"><span>🎯</span>Mühimmat</button>
+      <button class="tab" data-tab="magaza"><span>💎</span>Mağaza</button>
     </div>
     <div class="tabBody" id="tabBody"></div>
   </div>
@@ -359,6 +369,17 @@ const PLANE_DEF_COS = {
 function defaultCos(id) { return Object.assign({ paint: 0, accent: 1, pattern: 'solid', decal: 'none', wings: 'std', gear: 'std', glow: 'orange', canopy: 'clear' }, PLANE_DEF_COS[id] || {}); }
 function cosItem(cat, id) { return (COS[cat] || []).find(x => x.id === id); }
 
+// ===================== ELMAS MAĞAZASI =====================
+const TAKVIYELER = [
+  { id: 'kalkan', n: 'Kalın Zırh', i: '🛡️', d: 6, a: 'Bir sonraki görevde +%50 zırh' },
+  { id: 'altin', n: 'Çift Altın', i: '💰', d: 8, a: 'Bir sonraki görevde toplanan altın x2' },
+  { id: 'can', n: 'Ekstra Can', i: '❤️', d: 6, a: 'Bir sonraki görevde +1 can (tek oyuncu)' },
+  { id: 'guc', n: 'Tam Güçle Kalkış', i: '⚡', d: 5, a: 'Göreve 3. silah gücü seviyesinde başla' },
+  { id: 'boss', n: 'Boss Avcısı', i: '☠️', d: 10, a: "Bir sonraki görevde boss'a +%25 hasar" },
+];
+const ALTIN_PAKET = [{ d: 10, g: 1500 }, { d: 30, g: 5000 }, { d: 100, g: 18000 }];
+const DEVAM_UCRET = n => 15 + n * 10;
+
 // ===================== KAYIT (localStorage) =====================
 const SAVE_KEY = 'gokkartali3d_save_v1';
 const MAX_STAGE = 400; // 100 level x 4 görev
@@ -402,7 +423,7 @@ function upCost(plane, lvl) {
 }
 function profile() {
   const r = S.planes[S.plane];
-  return { name: S.name || 'Pilot', plane: S.plane, up: { dmg: r.dmg, rate: r.rate, armor: r.armor, speed: r.speed }, cos: Object.assign({}, r.cos), pilot: S.pilot, weapon: S.weapon, bomb: S.bomb, level: S.level };
+  return { takviye: Object.assign({}, S.takviye || {}), name: S.name || 'Pilot', plane: S.plane, up: { dmg: r.dmg, rate: r.rate, armor: r.armor, speed: r.speed }, cos: Object.assign({}, r.cos), pilot: S.pilot, weapon: S.weapon, bomb: S.bomb, level: S.level };
 }
 function calcStats(prof) {
   const P = planeDef(prof.plane);
@@ -421,22 +442,37 @@ function calcStats(prof) {
     case 'demir': st.bombRad = 1.4; st.bombCd *= 0.6; break;
     case 'nova': st.loot *= 1.25; st.magnet = 12; break;
   }
+  if (prof.takviye && prof.takviye.kalkan) st.maxHp *= 1.5;
   st.maxHp = Math.round(st.maxHp);
   st.speed *= st.maneuver;
   return st;
 }
 
 // ===================== SES (Web Audio API) =====================
+// Yumuşak, katmanlı sentez: düşük geçiren filtreler, kısa yankı (reverb), rastgele perde
+// farkı ve dengeli seviyeler. Kare dalga (sert) yerine sinüs/üçgen ve filtrelenmiş gürültü.
 const sfx = (() => {
-  let ctx = null, master = null, noiseBuf = null; const last = {};
+  let ctx = null, master = null, sfxBus = null, verbIn = null, beyaz = null, kahve = null; const last = {};
   function init() {
     if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
-      master = ctx.createGain(); master.gain.value = 0.45;
-      const comp = ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
-      const len = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+      master = ctx.createGain(); master.gain.value = 0.7;
+      const yumusat = ctx.createBiquadFilter(); yumusat.type = 'lowpass'; yumusat.frequency.value = 9000;
+      sfxBus = ctx.createGain(); sfxBus.gain.value = 1;
+      sfxBus.connect(yumusat); yumusat.connect(comp); comp.connect(master); master.connect(ctx.destination);
+      // kısa yankı: üretilmiş darbe tepkisi
+      const conv = ctx.createConvolver(); const L = Math.floor(ctx.sampleRate * 1.4); const ir = ctx.createBuffer(2, L, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < L; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 3.2); }
+      conv.buffer = ir; verbIn = ctx.createGain(); verbIn.gain.value = 0.22; const verbOut = ctx.createGain(); verbOut.gain.value = 0.5;
+      verbIn.connect(conv); conv.connect(verbOut); verbOut.connect(comp);
+      // gürültü tamponları: beyaz (tıslama) ve kahverengi (derin gümbürtü)
+      const n = ctx.sampleRate * 2;
+      beyaz = ctx.createBuffer(1, n, ctx.sampleRate); kahve = ctx.createBuffer(1, n, ctx.sampleRate);
+      const w = beyaz.getChannelData(0), k = kahve.getChannelData(0); let son = 0;
+      for (let i = 0; i < n; i++) { const r = Math.random() * 2 - 1; w[i] = r; son = (son + 0.02 * r) / 1.02; k[i] = son * 3.5; }
     } catch (e) { ctx = null; }
   }
   function ok(name, gap) {
@@ -445,41 +481,69 @@ const sfx = (() => {
     if (gap && last[name] && t - last[name] < gap) return false;
     last[name] = t; return true;
   }
-  function tone(type, f0, f1, dur, vol, delay = 0) {
-    const t = ctx.currentTime + delay; const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f0, t); if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.03);
+  const rp = (v, f = 0.06) => v * (1 + (Math.random() * 2 - 1) * f);   // küçük perde farkı: tekrar eden sesler sıkmasın
+  function cikis(yankili, pan) {
+    let hedef = sfxBus;
+    if (pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(sfxBus); if (yankili) p.connect(verbIn); return p; }
+    if (yankili) { const g = ctx.createGain(); g.connect(sfxBus); g.connect(verbIn); hedef = g; }
+    return hedef;
   }
-  function noise(dur, vol, fA, fB, type = 'lowpass', delay = 0) {
-    const t = ctx.currentTime + delay; const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(fA, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, fB), t + dur);
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05);
+  // zarf: hızlı atak, üstel sönüm
+  function ton(tip, f0, f1, sure, ses, gecikme = 0, opt = {}) {
+    const t = ctx.currentTime + gecikme, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = tip; o.frequency.setValueAtTime(f0, t); if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + sure);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ses, t + (opt.atak || 0.005)); g.gain.exponentialRampToValueAtTime(0.0001, t + sure);
+    let son = g;
+    if (opt.lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = opt.lp; f.Q.value = opt.q || 0.7; g.connect(f); son = f; }
+    o.connect(g); son.connect(cikis(opt.yankı, opt.pan)); o.start(t); o.stop(t + sure + 0.05);
+  }
+  function gurultu(tamp, sure, ses, tip, fA, fB, gecikme = 0, opt = {}) {
+    const t = ctx.currentTime + gecikme, s = ctx.createBufferSource(); s.buffer = tamp === 'k' ? kahve : beyaz;
+    const f = ctx.createBiquadFilter(); f.type = tip; f.Q.value = opt.q || 0.8;
+    f.frequency.setValueAtTime(fA, t); f.frequency.exponentialRampToValueAtTime(Math.max(30, fB), t + sure);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ses, t + (opt.atak || 0.004)); g.gain.exponentialRampToValueAtTime(0.0001, t + sure);
+    s.connect(f); f.connect(g); g.connect(cikis(opt.yankı, opt.pan)); s.start(t, Math.random() * 1.2); s.stop(t + sure + 0.05);
   }
   return {
     init,
-    mg() { if (!ok('mg', 0.07)) return; noise(0.06, 0.22, 3500, 700, 'bandpass'); tone('square', 240, 90, 0.05, 0.06); },
-    laser() { if (!ok('laser', 0.11)) return; tone('sawtooth', 1500, 280, 0.16, 0.06); tone('sine', 2400, 900, 0.12, 0.05); },
-    plasma() { if (!ok('plasma', 0.13)) return; tone('sine', 420, 1300, 0.18, 0.1); tone('triangle', 210, 650, 0.2, 0.07); },
-    hit() { if (!ok('hit', 0.05)) return; noise(0.05, 0.1, 2400, 900, 'highpass'); },
-    explode(size = 1) { if (!ok('ex', 0.05)) return; const s = Math.min(size, 3); noise(0.35 + s * 0.25, 0.22 + s * 0.1, 1400, 50); tone('sine', 130, 28, 0.35 + s * 0.2, 0.25); },
-    nuke() { if (!ctx || !S.sound) return; noise(2.2, 0.55, 2600, 25); tone('sine', 95, 18, 2.0, 0.5); tone('sawtooth', 60, 22, 1.6, 0.12); },
-    emp() { if (!ok('emp', 0.3)) return; tone('sine', 70, 1900, 0.55, 0.22); tone('sawtooth', 2100, 90, 0.75, 0.07); noise(0.7, 0.18, 400, 5000, 'bandpass'); },
-    missile() { if (!ok('mis', 0.3)) return; for (let i = 0; i < 6; i++) noise(0.35, 0.12, 700, 3200, 'bandpass', i * 0.07); },
-    click() { if (!ok('click', 0.03)) return; tone('square', 880, 1320, 0.05, 0.06); },
-    coin() { if (!ok('coin', 0.06)) return; tone('square', 988, 988, 0.06, 0.05); tone('square', 1319, 1319, 0.12, 0.05, 0.06); },
-    gem() { if (!ok('gem', 0.08)) return;[1047, 1319, 1568, 2093].forEach((f, i) => tone('triangle', f, f, 0.12, 0.07, i * 0.06)); },
-    power() { if (!ok('pow', 0.15)) return;[523, 659, 784, 1047].forEach((f, i) => tone('square', f, f * 1.01, 0.1, 0.06, i * 0.07)); },
-    heal() { if (!ok('heal', 0.15)) return;[392, 523, 659].forEach((f, i) => tone('sine', f, f * 1.5, 0.18, 0.08, i * 0.08)); },
-    hurt() { if (!ok('hurt', 0.12)) return; tone('sawtooth', 320, 70, 0.25, 0.13); noise(0.2, 0.18, 1600, 200); },
-    alarm() { if (!ok('alarm', 1)) return; for (let i = 0; i < 4; i++) { tone('square', 680, 680, 0.22, 0.07, i * 0.5); tone('square', 460, 460, 0.22, 0.07, i * 0.5 + 0.25); } },
-    levelup() { if (!ok('lv', 0.5)) return;[523, 659, 784, 1047, 1319].forEach((f, i) => { tone('square', f, f, 0.14, 0.06, i * 0.09); tone('triangle', f * 2, f * 2, 0.14, 0.04, i * 0.09); }); },
-    buy() { if (!ok('buy', 0.1)) return; tone('square', 660, 660, 0.07, 0.06); tone('square', 990, 990, 0.1, 0.06, 0.07); tone('triangle', 1320, 1320, 0.18, 0.05, 0.14); },
-    error() { if (!ok('err', 0.15)) return; tone('square', 220, 150, 0.18, 0.08); },
-    win() { if (!ok('win', 1)) return;[523, 659, 784, 659, 784, 1047].forEach((f, i) => tone('square', f, f, 0.16, 0.06, i * 0.13)); },
-    lose() { if (!ok('lose', 1)) return;[392, 330, 262, 196].forEach((f, i) => tone('triangle', f, f * 0.98, 0.3, 0.09, i * 0.22)); },
-    whoosh() { if (!ok('wh', 0.3)) return; noise(0.5, 0.15, 300, 3000, 'bandpass'); },
+    // Makineli: kısa, filtrelenmiş "tak" + alçak gövde sesi
+    mg() { if (!ok('mg', 0.085)) return; gurultu('b', 0.05, 0.10, 'bandpass', rp(2200, 0.15), 900, 0, { q: 1.2 }); ton('sine', rp(170), 70, 0.07, 0.10); },
+    // Lazer: yumuşak "fiyuv" — sinüs süpürme + hafif harmonik, filtreli
+    laser() { if (!ok('laser', 0.12)) return; ton('sine', rp(1500), 380, 0.16, 0.07, 0, { lp: 3500 }); ton('triangle', rp(760), 190, 0.18, 0.05, 0, { lp: 2500 }); },
+    // Plazma: dolgun "blup"
+    plasma() { if (!ok('plasma', 0.14)) return; ton('sine', rp(240), 520, 0.14, 0.11, 0, { lp: 1800 }); ton('triangle', rp(480), 900, 0.12, 0.04, 0, { lp: 2400 }); },
+    hit() { if (!ok('hit', 0.06)) return; gurultu('b', 0.04, 0.05, 'highpass', 3000, 1800); ton('sine', rp(900), 600, 0.04, 0.025); },
+    // Patlama: derin gümbürtü + kahverengi gürültü + yankı (boyuta göre)
+    explode(size = 1) {
+      if (!ok('ex', 0.06)) return; const s = Math.min(size, 3), pan = rand(-0.3, 0.3);
+      ton('sine', rp(90 - s * 10), 32, 0.35 + s * 0.25, 0.22 + s * 0.06, 0, { yankı: true, pan });
+      gurultu('k', 0.5 + s * 0.35, 0.28 + s * 0.08, 'lowpass', 900 + s * 300, 80, 0, { yankı: true, pan });
+      gurultu('b', 0.12 + s * 0.05, 0.08, 'bandpass', 2500, 600, 0.01, { pan });
+    },
+    // Büyük bomba: uzun, katmanlı gürleme
+    nuke() {
+      if (!ctx || !S.sound) return;
+      ton('sine', 70, 22, 2.2, 0.35, 0, { yankı: true }); ton('sine', 110, 40, 1.4, 0.15, 0.05, { yankı: true });
+      gurultu('k', 2.4, 0.45, 'lowpass', 1400, 50, 0, { yankı: true });
+      for (let i = 0; i < 6; i++) gurultu('k', 0.35, 0.2, 'lowpass', 1100, 120, 0.15 + i * 0.12, { yankı: true, pan: rand(-0.6, 0.6) });
+    },
+    emp() { if (!ok('emp', 0.3)) return; ton('sine', 60, 1400, 0.5, 0.14, 0, { yankı: true, lp: 3000 }); ton('sine', 1800, 120, 0.7, 0.07, 0.05, { yankı: true }); gurultu('b', 0.6, 0.08, 'bandpass', 600, 4000, 0, { q: 2 }); },
+    missile() { if (!ok('mis', 0.3)) return; for (let i = 0; i < 6; i++) gurultu('b', 0.45, 0.06, 'bandpass', 600, 2400, i * 0.07, { q: 1.5, pan: rand(-0.5, 0.5) }); },
+    click() { if (!ok('click', 0.03)) return; ton('sine', 1100, 1500, 0.045, 0.05); },
+    // Altın: hoş iki notalı çan
+    coin() { if (!ok('coin', 0.07)) return; ton('sine', 1318, 0, 0.12, 0.06); ton('sine', 1976, 0, 0.22, 0.05, 0.07, { yankı: true }); ton('sine', 3952, 0, 0.12, 0.012, 0.07); },
+    gem() { if (!ok('gem', 0.1)) return;[1568, 2093, 2637, 3136].forEach((f, i) => ton('sine', f, 0, 0.25, 0.045, i * 0.06, { yankı: true })); },
+    power() { if (!ok('pow', 0.15)) return;[523, 659, 784, 1047].forEach((f, i) => ton('triangle', f, f * 1.01, 0.16, 0.06, i * 0.06, { yankı: true, lp: 4000 })); },
+    heal() { if (!ok('heal', 0.15)) return;[392, 523, 659].forEach((f, i) => ton('sine', f, f * 1.5, 0.22, 0.06, i * 0.08, { yankı: true })); },
+    hurt() { if (!ok('hurt', 0.12)) return; ton('sine', 160, 60, 0.22, 0.2); gurultu('k', 0.2, 0.18, 'lowpass', 1200, 200); ton('triangle', 420, 200, 0.15, 0.04, 0, { lp: 1500 }); },
+    // Alarm: titreşimli yumuşak iki ton
+    alarm() { if (!ok('alarm', 1)) return; for (let i = 0; i < 3; i++) { ton('sine', 740, 740, 0.28, 0.07, i * 0.6, { lp: 2000 }); ton('sine', 554, 554, 0.28, 0.07, i * 0.6 + 0.3, { lp: 2000 }); } },
+    levelup() { if (!ok('lv', 0.5)) return;[523, 659, 784, 1047, 1319].forEach((f, i) => { ton('triangle', f, f, 0.25, 0.06, i * 0.09, { yankı: true, lp: 5000 }); ton('sine', f * 2, f * 2, 0.2, 0.025, i * 0.09); }); },
+    buy() { if (!ok('buy', 0.1)) return; ton('sine', 880, 0, 0.1, 0.06); ton('sine', 1320, 0, 0.18, 0.06, 0.08, { yankı: true }); },
+    error() { if (!ok('err', 0.15)) return; ton('triangle', 300, 220, 0.16, 0.07, 0, { lp: 1200 }); ton('triangle', 240, 180, 0.2, 0.06, 0.12, { lp: 1200 }); },
+    win() { if (!ok('win', 1)) return;[523, 659, 784, 1047, 784, 1047].forEach((f, i) => ton('triangle', f, f, 0.3, 0.06, i * 0.13, { yankı: true, lp: 5000 })); },
+    lose() { if (!ok('lose', 1)) return;[392, 330, 262, 196].forEach((f, i) => ton('sine', f, f * 0.97, 0.4, 0.08, i * 0.22, { yankı: true })); },
+    whoosh() { if (!ok('wh', 0.3)) return; gurultu('b', 0.7, 0.1, 'bandpass', 250, 2800, 0, { q: 0.9, atak: 0.25, yankı: true }); },
   };
 })();
 
@@ -765,13 +829,37 @@ function buildPlaneModel(id, cos, opt = {}) {
 function disposeTree(o) { o.traverse(m => { if (m.isMesh && m.userData.glb) { (Array.isArray(m.material) ? m.material : [m.material]).forEach(mt => mt && mt.dispose()); return; } if (m.isMesh) { m.geometry && m.geometry.dispose(); const mats = Array.isArray(m.material) ? m.material : [m.material]; mats.forEach(mt => { if (mt) { if (mt.map && !Object.values(decalTexCache).includes(mt.map)) mt.map.dispose(); mt.dispose(); } }); } }); }
 
 // ===================== PİLOT MODELLERİ =====================
+// Animasyonlu pilot karakterleri (Quaternius, CC0): bekleme + el sallama. İlk görüntülendiğinde yüklenir.
+const PILOT_GLB = {}, pilotYukleniyor = {};
+function pilotYukle(id, bitti) {
+  if (PILOT_GLB[id] || pilotYukleniyor[id] || !THREE.GLTFLoader) return;
+  pilotYukleniyor[id] = true;
+  new THREE.GLTFLoader().load('models/pilot_' + id + '.glb', g => { PILOT_GLB[id] = g; pilotYukleniyor[id] = false; bitti && bitti(); }, undefined, () => { pilotYukleniyor[id] = false; console.warn('Pilot modeli yüklenemedi:', id); });
+}
+function klipBul(anims, desen) { return anims.find(a => desen.test(a.name)); }
+function animasyonluPilot(id) {
+  const kay = PILOT_GLB[id]; if (!kay) return null;
+  const m = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(kay.scene) : kay.scene.clone(true);
+  m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+  // ölçek: boy 3 birim, ayaklar zeminde, ortalanmış
+  const kutu = new THREE.Box3().setFromObject(m), boy = kutu.max.y - kutu.min.y || 1, s = 3.0 / boy;
+  m.scale.setScalar(s); m.position.set(-(kutu.min.x + kutu.max.x) / 2 * s, -kutu.min.y * s, -(kutu.min.z + kutu.max.z) / 2 * s);
+  const g = new THREE.Group(); g.add(m);
+  const mixer = new THREE.AnimationMixer(m), A = kay.animations;
+  const idleK = klipBul(A, /\|Idle$/) || klipBul(A, /^Idle$/) || klipBul(A, /Idle/);
+  const waveK = klipBul(A, /Wave/) || klipBul(A, /Yes/);
+  const idle = idleK ? mixer.clipAction(idleK) : null, wave = waveK ? mixer.clipAction(waveK) : null;
+  if (idle) idle.play();
+  if (wave) { wave.setLoop(THREE.LoopOnce, 1); wave.clampWhenFinished = true; }
+  mixer.addEventListener('finished', e => { if (e.action === wave && idle) { idle.reset().fadeIn(0.35).play(); wave.fadeOut(0.35); } });
+  g.userData.mixer = mixer;
+  g.userData.selam = () => { if (!wave) return; wave.reset().fadeIn(0.25).play(); if (idle) idle.fadeOut(0.25); };
+  return g;
+}
 function buildPilot(pd) {
-  if (GLB.pilot) {
-    const g = new THREE.Group(), m = glbKlon('pilot'); g.add(m);
-    const renk = new THREE.Color(pd.color);
-    glbMalzemeler(m, mt => { if (mt.color && (mt.color.r + mt.color.g + mt.color.b) / 3 > 0.55) mt.color.lerp(renk, 0.55); });
-    return g;
-  }
+  const anim = animasyonluPilot(pd.id);
+  if (anim) return anim;
+  pilotYukle(pd.id, () => { delete hPilotCache[pd.id]; if (appState === 'hangar') { setHangarPreview(pvPlane, pvPilot); if (hPilotModel && hPilotModel.userData.selam) hPilotModel.userData.selam(); } });
   const g = new THREE.Group();
   const suit = M(pd.color, { roughness: 0.75, metalness: 0.05 }), dark = M(0x2a2f38, { roughness: 0.6 }), skin = M(0xe2b48c, { metalness: 0, roughness: 0.7 });
   const helm = MP(0xf0f3f7, { metalness: 0.2, roughness: 0.25 }), visor = MP(0x15233a, { metalness: 1, roughness: 0.03 });
@@ -940,7 +1028,7 @@ function buildBoss(variant) {
 // ===================== HAZIR 3D MODELLER (GLB) =====================
 // Poly Pizza (CC0 / CC-BY) modelleri, Blender ile yön/ölçek normalleştirildi. Yüklenemezse kodla çizilen modeller kullanılır.
 const GLB = {};
-const GLB_LIST = ['oyuncu_p40', 'oyuncu_f16', 'oyuncu_a10', 'oyuncu_f22', 'oyuncu_x99', 'dusman_avci', 'dusman_jet', 'dusman_bombardiman', 'dusman_helikopter', 'dusman_tank', 'boss', 'pilot', 'fuze', 'bomba'];
+const GLB_LIST = ['oyuncu_p40', 'oyuncu_f16', 'oyuncu_a10', 'oyuncu_f22', 'oyuncu_x99', 'dusman_avci', 'dusman_jet', 'dusman_bombardiman', 'dusman_helikopter', 'dusman_tank', 'boss', 'fuze', 'bomba'];
 const PLANE_GLB = { p40: 'oyuncu_p40', f16: 'oyuncu_f16', a10: 'oyuncu_a10', f22: 'oyuncu_f22', x99: 'oyuncu_x99' };
 const ENEMY_GLB = { fighter: 'dusman_avci', jet: 'dusman_jet', bomber: 'dusman_bombardiman', heli: 'dusman_helikopter', tank: 'dusman_tank' };
 function glbKlon(ad) {
@@ -972,7 +1060,7 @@ const KREDILER = [
   ['P-40 Sparrow', 'Aeroplane', 'Gilang Romadhan', 'CC-BY'], ['F-16 Falcon', 'Jet', 'Poly by Google', 'CC-BY'], ['A-10 Warthog', 'Jet', 'Poly by Google', 'CC-BY'],
   ['F-22 Raptor', 'Jet', 'jeremy', 'CC-BY'], ['X-99 Valkyrie', 'Low poly Fighter', 'Stephen Graybill', 'CC0'], ['Düşman avcı', 'Airplane', 'Poly by Google', 'CC0'],
   ['Düşman jet', 'Spaceship', 'Liz Reddington', 'CC-BY'], ['Bombardıman', 'Spaceship', 'Quaternius', 'CC0'], ['Helikopter', 'Helicopter', 'kazuma', 'CC0'],
-  ['Tank', 'Tank', 'Quaternius', 'CC0'], ['Boss', 'Spaceship', 'Quaternius', 'CC0'], ['Pilot', 'Astronaut', 'PW Wu', 'CC-BY'],
+  ['Tank', 'Tank', 'Quaternius', 'CC0'], ['Boss', 'Spaceship', 'Quaternius', 'CC0'], ['Yüzbaşı Kaya', 'Character Soldier', 'Quaternius', 'CC0'], ['Teğmen Ege', 'Astronaut', 'Quaternius', 'CC0'], ['Binbaşı Demir', 'SWAT', 'Quaternius', 'CC0'], ['Pilot Nova', 'Animated Woman', 'Quaternius', 'CC0'],
   ['Füze', 'Missile', 'Jarlan Perez', 'CC-BY'], ['Bomba', 'Bomb', 'Quaternius', 'CC0'],
 ];
 
@@ -1031,13 +1119,18 @@ function setHangarPreview(planeId, pilotId, cos) {
     hPlaneHolder.position.y = 0.5 - hPlaneModel.userData.groundY * hs;
   }
   if (!hPilotCache[pilotId]) { hPilotCache[pilotId] = buildPilot(pilotDef(pilotId)); }
-  if (hPilotModel !== hPilotCache[pilotId]) { if (hPilotModel) hPilotHolder.remove(hPilotModel); hPilotModel = hPilotCache[pilotId]; hPilotHolder.add(hPilotModel); }
+  if (hPilotModel !== hPilotCache[pilotId]) { if (hPilotModel) hPilotHolder.remove(hPilotModel); hPilotModel = hPilotCache[pilotId]; hPilotHolder.add(hPilotModel); if (hPilotModel.userData.selam) { hPilotModel.userData.selam(); hSelamT = 0; } }
 }
-let hTime = 0;
+let hTime = 0, hSelamT = 0;
 function hangarUpdate(dt) {
   hTime += dt;
   hPlaneHolder.rotation.y += dt * 0.4;
-  hPilotHolder.rotation.y -= dt * 0.6;
+  hSelamT += dt;
+  hPilotHolder.rotation.y = -0.35 + Math.sin(hTime * 0.45) * 0.5;
+  if (hPilotModel && hPilotModel.userData.mixer) {
+    hPilotModel.userData.mixer.update(dt);
+    if (hSelamT > 9) { hSelamT = 0; hPilotModel.userData.selam(); }
+  }
   if (hPlaneModel) animModel(hPlaneModel, dt, 0.6);
 }
 function animModel(m, dt, power) {
@@ -1104,7 +1197,7 @@ function makeGroundTex(bi) {
   isl.forEach(([px, py, r, sd]) => {
     if (b.water) {
       // sığ su halesi (turkuaz geçiş)
-      wrapDraw((X, Y) => { const g = x.createRadialGradient(X, Y, r * 0.8, X, Y, r * 1.9); g.addColorStop(0, b.shallow || '#3fb6b0'); g.addColorStop(1, (b.shallow || '#3fb6b0') + '00'); x.fillStyle = g; x.beginPath(); x.arc(X, Y, r * 1.9, 0, PI * 2); x.fill(); }, px, py, r * 2);
+      wrapDraw((X, Y) => { const g = x.createRadialGradient(X, Y, r * 0.8, X, Y, r * 1.9); g.addColorStop(0, (b.shallow || '#3fb6b0') + 'b0'); g.addColorStop(1, (b.shallow || '#3fb6b0') + '00'); x.fillStyle = g; x.beginPath(); x.arc(X, Y, r * 1.9, 0, PI * 2); x.fill(); }, px, py, r * 2);
       // kıyı köpüğü
       wrapDraw((X, Y) => { x.globalAlpha = 0.55; blob(x, X, Y, r * 1.24, '#f4f8f6', 1, sd); x.globalAlpha = 1; }, px, py, r * 1.7);
     }
@@ -1149,23 +1242,49 @@ function makeGroundTex(bi) {
     x.shadowBlur = 0;
   }
   const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(320 / TILE, 320 / TILE); t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t; };
-  groundTex[bi] = { map: mk(c), rough: mk(rc) }; return groundTex[bi];
+  // dalga normal haritası: suyun üzerinde güneş parıltısı; karalar düz
+  const NS = 512, nc = document.createElement('canvas'); nc.width = nc.height = NS; const nx = nc.getContext('2d');
+  const img = nx.createImageData(NS, NS), d = img.data;
+  const yuk = new Float32Array(NS * NS), dalga = [];
+  for (let i = 0; i < 9; i++) dalga.push({ kx: rint(-6, 6) || 1, ky: rint(2, 14), a: rand(0.3, 1) / (1 + i * 0.4), f: rand(0, PI * 2) });
+  for (let y = 0; y < NS; y++) for (let xx = 0; xx < NS; xx++) { let v = 0; for (const w of dalga) v += w.a * Math.sin((w.kx * xx + w.ky * y) / NS * PI * 2 + w.f); yuk[y * NS + xx] = v; }
+  for (let y = 0; y < NS; y++) for (let xx = 0; xx < NS; xx++) {
+    const hx = yuk[y * NS + ((xx + 1) % NS)] - yuk[y * NS + ((xx - 1 + NS) % NS)], hy = yuk[((y + 1) % NS) * NS + xx] - yuk[((y - 1 + NS) % NS) * NS + xx];
+    const o = (y * NS + xx) * 4; d[o] = clamp(128 - hx * 40, 0, 255); d[o + 1] = clamp(128 - hy * 40, 0, 255); d[o + 2] = 255; d[o + 3] = 255;
+  }
+  nx.putImageData(img, 0, 0);
+  if (b.water) isl.forEach(([px, py, r, sd]) => { const s = NS / TS; for (const dx of [-NS, 0, NS]) for (const dy of [-NS, 0, NS]) blob(nx, px * s + dx, py * s + dy, r * 1.2 * s, '#8080ff', 1, sd); });
+  else { nx.fillStyle = '#8080ff'; nx.fillRect(0, 0, NS, NS); }
+  groundTex[bi] = { map: mk(c), rough: mk(rc), normal: mk(nc) }; return groundTex[bi];
 }
 function setBiome(bi) {
   const b = BIOMES[bi], t = makeGroundTex(bi);
-  groundMat.map = t.map; groundMat.roughnessMap = t.rough; groundMat.metalness = b.water ? 0.15 : 0; groundMat.needsUpdate = true;
+  groundMat.map = t.map; groundMat.roughnessMap = t.rough; groundMat.normalMap = t.normal; groundMat.normalScale.set(0.55, 0.55);
+  groundMat.metalness = b.water ? 0.05 : 0; groundMat.needsUpdate = true;
   gameScene.background = new THREE.Color(b.fog);
   gameScene.fog = new THREE.Fog(b.fog, 90, 175);
   gHemi.intensity = b.lava ? 0.4 : 0.5; gSun.color.set(b.lava ? 0xffb080 : 0xfff6e8);
 }
-// bulutlar
+// bulutlar: yumuşak kenarlı, katmanlı sprite bulutlar
 const clouds = [];
 {
-  const cm = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, depthWrite: false, roughness: 1 });
-  for (let i = 0; i < 10; i++) {
-    const g = new THREE.Group(); const n = rint(4, 7); const cmi = cm.clone(); g.userData.mat = cmi;
-    for (let k = 0; k < n; k++) { const s = mesh(new THREE.SphereGeometry(rand(1.6, 3.2), 20, 14), cmi, rand(-3.5, 3.5), rand(-0.5, 0.5), rand(-2, 2)); s.scale.y = 0.5; g.add(s); }
-    g.position.set(rand(-45, 45), rand(1.4, 2.4), rand(-110, 30)); g.userData.sp = rand(0.8, 1.3); g.renderOrder = 3;
+  const bulutTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+    for (let i = 0; i < 26; i++) {
+      const px = 128 + rand(-70, 70), py = 128 + rand(-38, 38), r = rand(28, 62);
+      const g = x.createRadialGradient(px, py, 0, px, py, r);
+      const alt = py > 140 ? 0.86 : 1;   // alt kısım hafif gölgeli
+      g.addColorStop(0, `rgba(${255 * alt | 0},${255 * alt | 0},${255 * alt | 0},0.55)`); g.addColorStop(0.6, `rgba(${248 * alt | 0},${250 * alt | 0},${255 * alt | 0},0.25)`); g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+    }
+    const t = new THREE.CanvasTexture(c); return t;
+  })();
+  for (let i = 0; i < 12; i++) {
+    const g = new THREE.Group(); const mat = new THREE.SpriteMaterial({ map: bulutTex, transparent: true, opacity: 0.8, depthWrite: false, fog: true });
+    g.userData.mat = mat; g.userData.maxOp = rand(0.55, 0.85);
+    const n = rint(3, 5);
+    for (let k = 0; k < n; k++) { const s = new THREE.Sprite(mat); const sc = rand(9, 16); s.scale.set(sc, sc * 0.6, 1); s.position.set(rand(-5, 5), rand(-0.3, 0.3), rand(-3, 3)); g.add(s); }
+    g.position.set(rand(-45, 45), rand(1.6, 3.0), rand(-110, 30)); g.userData.sp = rand(0.8, 1.3); g.renderOrder = 3;
     clouds.push(g); gameScene.add(g);
   }
 }
@@ -1313,6 +1432,9 @@ function newRun(mode, stage, profs, me) {
     lives: mode === 'single' ? 3 : Infinity, drops: [], armored: lm.L >= 15, snapT: 0, inT: 0, progress: 0, enemyMap: new Map(), hudT: 0, ended: false
   };
   G.players = profs.map((pr, i) => makePlayer(pr, i, profs.length));
+  G.players.forEach(p => { if (p.prof.takviye && p.prof.takviye.guc) p.power = 3; });
+  if (mode === 'single' && profs[0].takviye && profs[0].takviye.can) G.lives += 1;
+  G.devamSay = 0;
   const mp = profs.length > 1 ? 0.6 : 1;
   const kt = Math.round((14 + lm.m * 5 + lm.L * 0.6) * mp), gt = Math.round((90 + lm.m * 35) * G.rewMul * mp);
   const mg = 1 + lm.m + Math.floor(lm.L / 20);
@@ -1350,7 +1472,7 @@ function applyEvent(ev) {
 function grant(pi, k, n) {
   const p = G.players[pi]; if (!p || n <= 0) return;
   let v = n;
-  if (k === 'gold') v = Math.round(n * p.st.loot);
+  if (k === 'gold') v = Math.round(n * p.st.loot * (p.prof.takviye && p.prof.takviye.altin ? 2 : 1));
   if (k === 'gems') { const f = n * p.st.loot + p.gemFrac; v = Math.floor(f); p.gemFrac = f - v; if (v <= 0) return; }
   p.run[k] += v;
   if (G.mode === 'host' && pi !== G.me) G.netEv.push(['g', pi, k, v]);
@@ -1468,9 +1590,22 @@ function killPlayer(p) {
   E(['x', r1(p.x), r1(p.y), 2.6]);
   if (G.mode === 'single') {
     G.lives--;
-    if (G.lives < 0) { G.over = true; G.timers.push({ t: 2.2, fn: () => finishStage(false) }); return; }
+    if (G.lives < 0) { G.over = true; G.timers.push({ t: 1.4, fn: () => devamTeklif() }); return; }
     p.respawn = 2.5;
   } else p.respawn = 5;
+}
+function devamTeklif() {
+  if (!G || G.ended) return;
+  const ucret = DEVAM_UCRET(G.devamSay);
+  if (S.gems < ucret) { finishStage(false); return; }
+  G.paused = true;
+  openModal(`<h2>💥 VURULDUN!</h2><p style="text-align:center">Canların bitti. <b class="gem">💎 ${ucret}</b> elmas ile tam zırhla kaldığın yerden devam edebilirsin.<br><small style="color:var(--mut)">Elmasın: 💎 ${fmt(S.gems)}</small></p>
+    <div class="mBtns"><button class="btn" data-m="bitir">Görevi Bitir</button><button class="btn gemb" data-m="devam">💎 ${ucret} ile Devam Et</button></div>`, act => {
+    if (act === 'devam' && S.gems >= ucret) {
+      S.gems -= ucret; save(); G.devamSay++; closeModal(); G.paused = false; G.over = false; G.lives = 0;
+      clearEB(0, 0, 300); respawnPlayer(G.players[G.me]); sfx.power(); toast('💎 Devam! Kalan elmas: ' + fmt(S.gems));
+    } else { closeModal(); G.paused = false; finishStage(false); }
+  }, true);
 }
 function respawnPlayer(p) {
   p.alive = true; p.hp = p.st.maxHp; p.inv = 3; p.x = p.tx = p.rx = (G.players.length > 1 ? (p.idx === 0 ? -4 : 4) : 0); p.y = p.ty = p.ry = -14;
@@ -1599,6 +1734,7 @@ function damageBoss(d, owner, x, y) {
       }
     }
   }
+  const tk = G.players[owner] && G.players[owner].prof.takviye; if (tk && tk.boss) d *= 1.25;
   b.hp -= bossShielded(b) ? d * 0.2 : d; b.flash = 0.06;
   if (b.hp <= 0) killBoss(owner);
 }
@@ -1652,6 +1788,16 @@ function updateEnemies(dt) {
         if (!e.looped && e.y < e.loopY) { e.looped = true; e.loopLeft = PI * 2; e.rollT = 0.9; }
         if (e.loopLeft > 0) { const d = 2.6 * dt; e.loopLeft -= d; e.ang += d * e.yon; if (e.loopLeft <= 0) e.ang = -PI / 2; }
         yonHareket(e, dt, mv); break;
+    }
+    if (!e.ground) {      // ekrana girdikten sonra oyuncunun vurabileceği alanın dışına çıkmasın
+      const EX = FX - 2.5;
+      if (Math.abs(e.x) < EX) e.icerde = true;
+      if (e.icerde && Math.abs(e.x) > EX) {
+        e.x = Math.sign(e.x) * EX;
+        if (e.pat === 'cross') e.vx = 0;
+        else if (e.pat === 'dive') e.vx = -(e.vx || 0) * 0.5;
+        else if (e.ang != null) e.ang = PI - e.ang;
+      }
     }
     const kaciyor = e.pat === 'behind' && !e.turned;     // arkadan gelen düşman dönmeden ateş etmez
     if (!kaciyor && e.stun <= 0 && e.y < FY_TOP + 2 && e.y > FY_BOT + 9 && Math.abs(e.x) < FX + 1) { e.ft -= dt * G.fireMul; if (e.ft <= 0) { e.ft = ETYPES[e.type].fire * rand(0.85, 1.25); enemyFire(e); } }
@@ -1837,7 +1983,7 @@ function localControl(dt) {
 function renderGame(dt) {
   if (!G) return;
   const tex = ground.material.map; if (tex && G.phase !== 'over') tex.offset.y += G.scroll * dt / TILE;
-  for (const c of clouds) { c.userData.mat.opacity = 0.38 * clamp((-c.position.z - 2) / 22, 0, 1); c.position.z += G.scroll * 1.6 * c.userData.sp * dt; if (c.position.z > 40) { c.position.z = -120 - rand(0, 30); c.position.x = rand(-45, 45); } }
+  for (const c of clouds) { c.userData.mat.opacity = c.userData.maxOp * clamp((-c.position.z - 2) / 22, 0, 1); c.position.z += G.scroll * 1.6 * c.userData.sp * dt; if (c.position.z > 40) { c.position.z = -120 - rand(0, 30); c.position.x = rand(-45, 45); } }
   // oyuncular
   for (const p of G.players) {
     const isMe = p.idx === G.me;
@@ -1912,7 +2058,7 @@ function renderGame(dt) {
   partIM.count = n; partIM.instanceMatrix.needsUpdate = true; if (partIM.instanceColor) partIM.instanceColor.needsUpdate = true;
   for (const r of rings) { if (!r.on) continue; r.t += dt; const t = r.t / r.d; if (t >= 1) { r.on = false; r.m.visible = false; continue; } const s = r.r * (0.1 + 0.9 * Math.sqrt(t)); r.m.scale.set(s, 1, s); r.m.material.opacity = 0.9 * (1 - t); }
   // kamera sarsıntısı
-  { const me = G.players[G.me]; if (me && CAMPAN > 0) CAM0.x = lerp(CAM0.x, clamp(me.rx * 0.8, -CAMPAN, CAMPAN), Math.min(1, dt * 3.5)); }
+  { const me = G.players[G.me]; if (me && CAMPAN > 0) CAM0.x = lerp(CAM0.x, clamp(me.rx * 0.95, -CAMPAN, CAMPAN), Math.min(1, dt * 3.5)); }
   if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const s = G.shake * 0.9; camera.position.set(CAM0.x + rand(-s, s), CAM0.y + rand(-s, s), CAM0.z + rand(-s, s)); } else camera.position.copy(CAM0);
 }
 
@@ -1954,6 +2100,8 @@ function startGame(mode, stage, profs, me) {
   $('#pcHint').classList.toggle('hidden', isTouch);
   layoutGameCamera();
   newRun(mode, stage, profs, me);
+  const aktif = TAKVIYELER.filter(t => S.takviye && S.takviye[t.id]).map(t => t.i).join(' ');
+  if (aktif) { S.takviye = {}; save(); setTimeout(() => toast('Aktif takviyeler: ' + aktif, 3), 600); }
   drag = null; mouseFire = touchFire = false; Object.keys(keys).forEach(k => keys[k] = 0);
   const ms = G.missions.map(m => '• ' + m.txt).join('<br>');
   const diff = ['KOLAY', 'ORTA', 'ZOR', 'BOSS'][G.m - 1];
@@ -2280,6 +2428,13 @@ function renderHangar() {
       h += `<div class="card ${pvPilot === pd.id ? 'pv' : ''} ${locked && !owned ? 'locked' : ''}" data-act="pvPilot" data-id="${pd.id}">
         <div class="cIco" style="background:#${pd.color.toString(16).padStart(6, '0')}33">${pd.icon}</div><div class="cTxt"><b>${pd.name}</b><small style="color:#ffd451">${pd.role}</small><small>${pd.desc}</small></div><div>${act}</div></div>`;
     });
+  } else if (hTab === 'magaza') {
+    h += `<div class="secT">⚡ SONRAKİ GÖREV İÇİN TAKVİYE</div>`;
+    TAKVIYELER.forEach(t => { const on = S.takviye && S.takviye[t.id];
+      h += `<div class="shopRow ${on ? 'aktif' : ''}"><span class="si">${t.i}</span><div class="st"><b>${t.n}</b><small>${t.a}</small></div>${on ? '<span class="tag on">✓ Hazır</span>' : `<button class="btn sm gemb" data-act="takviye" data-id="${t.id}">💎 ${t.d}</button>`}</div>`; });
+    h += `<div class="secT" style="margin-top:14px">💰 ELMAS → ALTIN</div>`;
+    ALTIN_PAKET.forEach((p, i) => { h += `<div class="shopRow"><span class="si">💰</span><div class="st"><b>${fmt(p.g)} Altın</b><small>Hemen hesabına eklenir</small></div><button class="btn sm gemb" data-act="altinPaket" data-id="${i}">💎 ${p.d}</button></div>`; });
+    h += `<p style="color:var(--mut);font-size:15px;margin:6px 4px">💡 Tek oyunculuda canların bitince <b style="color:#fff">💎 elmasla kaldığın yerden devam</b> edebilirsin (15 💎, her devamda +10). Elmaslar ayrıca üst seviye uçaklar, 5. kademe sonrası geliştirmeler ve özel modifiyeler için de kullanılır.</p>`;
   } else if (hTab === 'loadout') {
     h += `<div class="secT">ANA MÜHİMMAT</div><div class="optGrid">` + WEAPONS.map(w => `<button class="opt ${S.weapon === w.id ? 'on' : ''}" data-act="weapon" data-id="${w.id}"><span class="oi">${w.icon}</span><b>${w.name}</b><small>${w.desc}</small></button>`).join('') + `</div>`;
     h += `<div class="secT">ÖZEL BOMBA</div><div class="optGrid">` + BOMBS.map(w => `<button class="opt ${S.bomb === w.id ? 'on' : ''}" data-act="bomb" data-id="${w.id}"><span class="oi">${w.icon}</span><b>${w.name}</b><small>${w.desc}</small></button>`).join('') + `</div>`;
@@ -2333,11 +2488,22 @@ $('#tabBody').addEventListener('click', e => {
     case 'weapon': S.weapon = id; sfx.click(); profileChanged(); break;
     case 'bomb': S.bomb = id; sfx.click(); profileChanged(); break;
     case 'autofire': S.autoFire = !S.autoFire; sfx.click(); save(); break;
+    case 'takviye': {
+      const t = TAKVIYELER.find(x => x.id === id); if (!t) break; S.takviye = S.takviye || {};
+      if (S.takviye[id]) break; if (S.gems < t.d) { sfx.error(); toast('Yetersiz elmas! 💎 ' + t.d + ' gerekli'); break; }
+      S.gems -= t.d; S.takviye[id] = 1; sfx.buy(); toast(t.i + ' ' + t.n + ' bir sonraki görev için hazır!'); profileChanged(); break;
+    }
+    case 'altinPaket': {
+      const p = ALTIN_PAKET[+id]; if (!p) break; if (S.gems < p.d) { sfx.error(); toast('Yetersiz elmas! 💎 ' + p.d + ' gerekli'); break; }
+      S.gems -= p.d; S.gold += p.g; sfx.coin(); toast('+' + fmt(p.g) + ' 💰 altın eklendi'); save(); break;
+    }
   }
   renderHangar();
 });
 function profileChanged() { save(); if (Net.status === 'lobby') netSend({ t: 'hello', prof: profile() }); }
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => { hTab = t.dataset.tab; pvCos = null; pvItem = null; if (hTab === 'upgrades' || hTab === 'cosmetic') pvPlane = S.plane; $('#tabBody').scrollTop = 0; renderHangar(); }));
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => { panelAc(true); hTab = t.dataset.tab; pvCos = null; pvItem = null; if (hTab === 'upgrades' || hTab === 'cosmetic') pvPlane = S.plane; $('#tabBody').scrollTop = 0; renderHangar(); }));
+function panelAc(acik) { S.panelKapali = !acik; save(); const p = document.querySelector('.hPanel'); p.classList.toggle('kapali', !acik); $('#panelToggle').textContent = acik ? '▾' : '▴'; }
+$('#panelToggle').addEventListener('click', () => panelAc(!!S.panelKapali));
 $('#stPrev').addEventListener('click', () => { if (S.stage > 1) { S.stage--; save(); renderStage(); } });
 $('#stNext').addEventListener('click', () => { if (S.stage < S.maxStage) { S.stage++; save(); renderStage(); } });
 $('#stPrevL').addEventListener('click', () => { S.stage = Math.max(1, S.stage - 4); save(); renderStage(); });
@@ -2516,7 +2682,7 @@ function setupComposer() {
   } catch (e) { console.warn('Bloom devre dışı', e); composer = null; }
 }
 function renderFrame(scene) {
-  if (composer && S.bloom) { renderPass.scene = scene; if (scene === gameScene) { bloomPass.threshold = 0.86; bloomPass.strength = 0.75; bloomPass.radius = 0.35; } else { bloomPass.threshold = 0.8; bloomPass.strength = 0.55; bloomPass.radius = 0.4; } try { composer.render(); return; } catch (e) { composer = null; } }
+  if (composer && S.bloom) { renderPass.scene = scene; if (scene === gameScene) { bloomPass.threshold = 0.95; bloomPass.strength = 0.4; bloomPass.radius = 0.25; } else { bloomPass.threshold = 0.9; bloomPass.strength = 0.35; bloomPass.radius = 0.3; } try { composer.render(); return; } catch (e) { composer = null; } }
   renderer.render(scene, camera);
 }
 let lastT = performance.now();
@@ -2548,6 +2714,7 @@ function init() {
   // modelleri önceden ısıt (ilk karede takılmayı önler)
   appState = 'hangar';
   layoutHangarCamera(); renderHangar();
+  panelAc(!S.panelKapali);
   $('#hangar').classList.remove('hidden');
   let yuklendi = false;
   const bitir = () => { if (yuklendi) return; yuklendi = true; $('#loading').classList.add('hidden'); };
