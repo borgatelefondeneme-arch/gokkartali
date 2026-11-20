@@ -1941,6 +1941,11 @@ function updatePlayersSim(dt) {
     if (p.firing) { p.fireT -= dt; if (p.fireT <= 0) fireWeapon(p); }
   }
 }
+function yenidenGir(e) {     // kaçan düşman farklı bir yerden tekrar ekrana girer
+  e.donus = (e.donus || 0) + 1; e.icerde = false; e.gorundu = false; e.t = 0; e.rollT = 0.9; e.leaving = false; e.delay = rand(0.6, 1.6);
+  if (Math.random() < 0.5) { e.x = rand(-EX, EX); e.y = SPAWN_Y; e.pat = 'dive'; e.vy = -11; e.vx = 0; e.dived = false; }
+  else { const side = e.x > 0 ? -1 : 1; e.x = side * (EX + 3); e.y = rand(14, 26); e.pat = 'arc'; e.ang = side > 0 ? PI : 0; e.angV = side > 0 ? 1.5 : -1.5; e.sp = 13; e.turnT = 1.05; }
+}
 function yonHareket(e, dt, mv) { e.x += Math.cos(e.ang) * e.sp * dt * mv; e.y += Math.sin(e.ang) * e.sp * dt * mv; }
 function updateEnemies(dt) {
   for (let i = G.enemies.length - 1; i >= 0; i--) {
@@ -1973,14 +1978,18 @@ function updateEnemies(dt) {
         if (e.loopLeft > 0) { const d = 2.6 * dt; e.loopLeft -= d; e.ang += d * e.yon; if (e.loopLeft <= 0) e.ang = -PI / 2; }
         yonHareket(e, dt, mv); break;
     }
-    {      // tüm düşmanlar görünen oyun alanında kalsın
+    {      // ekran dışında doğanlar içeri girer; içeri girmiş olan kaçabilir ama dışarıda oyalanmaz
       if (Math.abs(e.x) <= EX) e.icerde = true;
       else if (!e.icerde) e.x -= Math.sign(e.x) * Math.min(Math.abs(e.x) - EX, (e.ground ? 6 : 14) * dt);   // dışarıdakileri içeri çek
-      if (e.icerde && Math.abs(e.x) > EX) {
-        e.x = Math.sign(e.x) * EX;
-        if (e.pat === 'cross') e.vx = 0;
-        else if (e.pat === 'dive') e.vx = -(e.vx || 0) * 0.5;
-        else if (e.ang != null) e.ang = PI - e.ang;
+      if (e.y < FY_TOP) e.gorundu = true;
+      if (!e.ground) {
+        const yandan = e.icerde && Math.abs(e.x) > EX + 3;
+        const alttan = !(e.pat === 'behind' && !e.turned) && e.y < FY_BOT - 6;
+        const ustten = e.gorundu && e.y > FY_TOP + 8;
+        if (yandan || alttan || ustten) {
+          if ((e.donus || 0) < 1 && Math.random() < 0.6) yenidenGir(e);   // kaçtı, birazdan başka yerden geri gelir
+          else { removeEnemyAt(i); continue; }                            // tamamen kaçtı
+        }
       }
     }
     const kaciyor = e.pat === 'behind' && !e.turned;     // arkadan gelen düşman dönmeden ateş etmez
@@ -2137,7 +2146,8 @@ function applySnap(s) {
   const seen = new Set();
   for (const a of s.e) {
     const id = a[0]; seen.add(id); let e = G.enemyMap.get(id);
-    if (!e) { e = { id, type: ETYPE_LIST[a[1]], x: a[2], y: a[3], tx: a[2], ty: a[3], armored: !!(a[6] & 2), ground: !!ETYPES[ETYPE_LIST[a[1]]].ground, r: ETYPES[ETYPE_LIST[a[1]]].r, hp: 1, heading: PI, flash: 0, stun: 0 }; attachEnemyMesh(e); G.enemyMap.set(id, e); G.enemies.push(e); }
+    if (!e) { e = { id, type: ETYPE_LIST[a[1]], x: a[2], y: a[3], tx: a[2], ty: a[3], armored: !!(a[6] & 2), ground: !!ETYPES[ETYPE_LIST[a[1]]].ground, r: ETYPES[ETYPE_LIST[a[1]]].r, hp: 1, heading: PI, flash: 0, stun: 0, donusG: a[7] || 0 }; attachEnemyMesh(e); G.enemyMap.set(id, e); G.enemies.push(e); }
+    if ((a[7] || 0) !== e.donusG) { e.x = a[2]; e.y = a[3]; e.donusG = a[7] || 0; }
     e.tx = a[2]; e.ty = a[3]; e.hpf = a[4]; e.stun = (a[5] & 1) ? 1 : 0; e.rolling = !!(a[5] & 4); if (a[5] & 2) e.flash = 0.07;
   }
   for (let i = G.enemies.length - 1; i >= 0; i--) { const e = G.enemies[i]; if (!seen.has(e.id)) { G.enemyMap.delete(e.id); removeEnemyAt(i); } }
@@ -2159,7 +2169,7 @@ function applySnap(s) {
 }
 function buildSnap() {
   const s = { t: 's', ph: G.phase, pr: r2(G.progress) };
-  s.e = G.enemies.map(e => [e.id, ETYPE_LIST.indexOf(e.type), r1(e.x), r1(e.y), Math.round(e.hp / e.maxHp * 100), (e.stun > 0 ? 1 : 0) | (e.flash > 0 ? 2 : 0) | (e.rollT > 0 ? 4 : 0), e.armored ? 2 : 0]);
+  s.e = G.enemies.map(e => [e.id, ETYPE_LIST.indexOf(e.type), r1(e.x), r1(e.y), Math.round(e.hp / e.maxHp * 100), (e.stun > 0 ? 1 : 0) | (e.flash > 0 ? 2 : 0) | (e.rollT > 0 ? 4 : 0), e.armored ? 2 : 0, e.donus || 0]);
   s.k = G.pickups.map(q => [q.id, PICK_LIST.indexOf(q.type), r1(q.x), r1(q.y)]);
   s.p = G.players.map(p => [r1(p.x), r1(p.y), Math.round(p.hp), p.alive ? 1 : 0, r1(p.respawn), p.inv > 0 ? 1 : 0, p.power, p.firing ? 1 : 0, p.auxT > 0 ? 1 : 0]);
   const b = G.boss;
