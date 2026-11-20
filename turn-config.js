@@ -14,8 +14,8 @@
 //  tarayıcıda kullanılmak üzere verir. Kotanı panelden takip edebilirsin.
 // =====================================================================
 window.GK_TURN = {
-  meteredUygulama: "",   // örnek: "gokkartali"
-  meteredApiKey: "",     // Metered panelindeki API Key
+  meteredUygulama: "gokkartali",   // örnek: "gokkartali"
+  meteredApiKey: "4RowkkgvA8njt4xTyeMSMf_TNXF0m8sKjIFv4FN_0btcJRof",     // Metered panelindeki API Key
   // Kendi TURN sunucun varsa buraya da ekleyebilirsin:
   // { urls: "turn:sunucu.adresi:3478", username: "kullanici", credential: "sifre" }
   sunucular: []
