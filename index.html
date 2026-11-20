@@ -262,6 +262,7 @@ input{user-select:text;-webkit-user-select:text}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="turn-config.js"></script>
 <script>
 'use strict';
 // =====================================================================
@@ -316,9 +317,9 @@ const UPGRADES = [
 ];
 const MAX_UP = 10;
 const BIOMES = [
-  { name: 'Okyanus', water: true, deep: '#14456b', sea: '#1d5f8e', sand: '#dcc58c', land: '#3f8a3a', land2: '#2c6a2a', tree: '#1f4f1d', fog: 0x86b6dc },
-  { name: 'Çöl', water: false, deep: '#b98d50', sea: '#c9a465', sand: '#e6cb92', land: '#a4723e', land2: '#80552e', tree: '#5f6b2c', fog: 0xe3cda3 },
-  { name: 'Kutup', water: true, deep: '#1b3a5a', sea: '#2a5277', sand: '#d6e6f1', land: '#f3f8fc', land2: '#c6d9e8', tree: '#355a4a', fog: 0xc3d8ea },
+  { name: 'Okyanus', water: true, deep: '#14456b', sea: '#1d5f8e', sand: '#dcc58c', land: '#3f8a3a', land2: '#2c6a2a', tree: '#1f4f1d', fog: 0x86b6dc, shallow: '#2f9fae', fields: ['#7fa64a', '#a9b85a', '#5f8f3a', '#c2b26a', '#6c9a45'], village: true },
+  { name: 'Çöl', water: false, deep: '#b98d50', sea: '#c9a465', sand: '#e6cb92', land: '#a4723e', land2: '#80552e', tree: '#5f6b2c', fog: 0xe3cda3, village: true },
+  { name: 'Kutup', water: true, deep: '#1b3a5a', sea: '#2a5277', sand: '#d6e6f1', land: '#f3f8fc', land2: '#c6d9e8', tree: '#355a4a', fog: 0xc3d8ea, shallow: '#4f86ad' },
   { name: 'Volkan', water: false, deep: '#1d1412', sea: '#2b1f1c', sand: '#5a3a2a', land: '#3d2b25', land2: '#2b1f1b', tree: '#ff6a1a', fog: 0x51302a, lava: true },
 ];
 const ETYPES = {
@@ -1089,27 +1090,62 @@ function makeGroundTex(bi) {
   const b = BIOMES[bi];
   const c = document.createElement('canvas'); c.width = c.height = TS; const x = c.getContext('2d');
   const rc = document.createElement('canvas'); rc.width = rc.height = 256; const rx = rc.getContext('2d'); // pürüzlülük haritası
+  const k = TK;
+  // 1) taban: derinlik değişimli su / zemin
   x.fillStyle = b.deep; x.fillRect(0, 0, TS, TS);
-  for (let i = 0; i < 46; i++) { const px = Math.random() * TS, py = Math.random() * TS, r = rand(30, 90) * TK; wrapDraw((X, Y) => { x.globalAlpha = 0.3; blob(x, X, Y, r, b.sea, 0.6, i); x.globalAlpha = 1; }, px, py, r * 1.4); }
-  if (b.water) { x.strokeStyle = 'rgba(255,255,255,0.12)'; x.lineWidth = 1.6 * TK; for (let i = 0; i < 260; i++) { const px = Math.random() * TS, py = Math.random() * TS, w = rand(5, 12) * TK; x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + w / 2, py - 2.5 * TK, px + w, py); x.stroke(); } }
-  else { for (let i = 0; i < 160; i++) { x.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.05)'; const px = Math.random() * TS, py = Math.random() * TS; x.beginPath(); x.ellipse(px, py, rand(10, 40) * TK, rand(1.5, 4) * TK, 0, 0, PI * 2); x.fill(); } }
-  rx.fillStyle = b.water ? '#3a3a3a' : '#f0f0f0'; rx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 70; i++) { const px = Math.random() * TS, py = Math.random() * TS, r = rand(40, 130) * k; wrapDraw((X, Y) => { const g = x.createRadialGradient(X, Y, 0, X, Y, r); g.addColorStop(0, b.sea + '55'); g.addColorStop(1, b.sea + '00'); x.fillStyle = g; x.fillRect(X - r, Y - r, r * 2, r * 2); }, px, py, r); }
+  // ince doku gürültüsü
+  for (let i = 0; i < 1800; i++) { x.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.035)'; x.beginPath(); x.ellipse(Math.random() * TS, Math.random() * TS, rand(4, 22) * k, rand(1, 3) * k, rand(0, 0.3), 0, PI * 2); x.fill(); }
+  if (b.water) { x.strokeStyle = 'rgba(255,255,255,0.10)'; x.lineWidth = 1.3 * k; for (let i = 0; i < 420; i++) { const px = Math.random() * TS, py = Math.random() * TS, w = rand(4, 11) * k; x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + w / 2, py - 2 * k, px + w, py); x.stroke(); } }
+  rx.fillStyle = b.water ? '#2e2e2e' : '#f0f0f0'; rx.fillRect(0, 0, 256, 256);
+  // 2) adalar / kara parçaları
   const isl = [];
-  for (let i = 0; i < 7; i++) isl.push([Math.random() * TS, Math.random() * TS, rand(28, 70) * TK, i * 7.3]);
+  for (let i = 0; i < 6; i++) isl.push([Math.random() * TS, Math.random() * TS, rand(34, 78) * k, i * 7.3]);
   isl.forEach(([px, py, r, sd]) => {
-    wrapDraw((X, Y) => { x.globalAlpha = 0.35; blob(x, X, Y, r * 1.45, b.sea, 1, sd); x.globalAlpha = 1; }, px, py, r * 1.9);
-    wrapDraw((X, Y) => blob(x, X, Y, r * 1.18, b.sand, 1, sd), px, py, r * 1.6);
+    if (b.water) {
+      // sığ su halesi (turkuaz geçiş)
+      wrapDraw((X, Y) => { const g = x.createRadialGradient(X, Y, r * 0.8, X, Y, r * 1.9); g.addColorStop(0, b.shallow || '#3fb6b0'); g.addColorStop(1, (b.shallow || '#3fb6b0') + '00'); x.fillStyle = g; x.beginPath(); x.arc(X, Y, r * 1.9, 0, PI * 2); x.fill(); }, px, py, r * 2);
+      // kıyı köpüğü
+      wrapDraw((X, Y) => { x.globalAlpha = 0.55; blob(x, X, Y, r * 1.24, '#f4f8f6', 1, sd); x.globalAlpha = 1; }, px, py, r * 1.7);
+    }
+    wrapDraw((X, Y) => blob(x, X, Y, r * 1.17, b.sand, 1, sd), px, py, r * 1.6);
     wrapDraw((X, Y) => blob(x, X, Y, r, b.land, 1, sd), px, py, r * 1.6);
-    wrapDraw((X, Y) => blob(x, X + r * 0.15, Y - r * 0.1, r * 0.55, b.land2, 1.2, sd + 1), px, py, r * 1.6);
     wrapDraw((X, Y) => blob(rx, X * 256 / TS, Y * 256 / TS, r * 1.2 * 256 / TS, '#f0f0f0', 1, sd), px, py, r * 1.6);
-    for (let k = 0; k < r / (2.2 * TK); k++) {
-      const a = Math.random() * PI * 2, d = Math.random() * r * 0.78; const tx = px + Math.cos(a) * d, ty = py + Math.sin(a) * d, tr = rand(2, 4.5) * TK;
-      wrapDraw((X, Y) => { x.fillStyle = 'rgba(0,0,0,0.25)'; x.beginPath(); x.arc(X + tr * 0.5, Y + tr * 0.5, tr, 0, PI * 2); x.fill(); x.fillStyle = b.tree; x.beginPath(); x.arc(X, Y, tr, 0, PI * 2); x.fill(); x.fillStyle = 'rgba(255,255,255,0.12)'; x.beginPath(); x.arc(X - tr * 0.3, Y - tr * 0.3, tr * 0.45, 0, PI * 2); x.fill(); }, tx, ty, 8 * TK);
+    // tarlalar (yalnızca ılıman bölgede)
+    if (b.fields) {
+      for (let t = 0; t < 7; t++) {
+        const a = Math.random() * PI * 2, d = Math.random() * r * 0.45, fx = px + Math.cos(a) * d, fy = py + Math.sin(a) * d;
+        const fw = rand(10, 22) * k, fh = rand(7, 15) * k, rot = rand(-0.5, 0.5), col = b.fields[t % b.fields.length];
+        wrapDraw((X, Y) => { x.save(); x.translate(X, Y); x.rotate(rot); x.fillStyle = col; x.fillRect(-fw / 2, -fh / 2, fw, fh); x.strokeStyle = 'rgba(0,0,0,0.12)'; x.lineWidth = 0.8 * k; for (let s = -fw / 2; s < fw / 2; s += 2.2 * k) { x.beginPath(); x.moveTo(s, -fh / 2); x.lineTo(s, fh / 2); x.stroke(); } x.restore(); }, fx, fy, fw);
+      }
+    }
+    wrapDraw((X, Y) => blob(x, X + r * 0.18, Y - r * 0.12, r * 0.42, b.land2, 1.2, sd + 1), px, py, r * 1.6);
+    // orman / kaya kümeleri (gölgeli)
+    for (let t = 0; t < r / (1.6 * k); t++) {
+      const a = Math.random() * PI * 2, d = Math.pow(Math.random(), 0.7) * r * 0.82; const tx = px + Math.cos(a) * d, ty = py + Math.sin(a) * d, tr = rand(1.8, 4) * k;
+      wrapDraw((X, Y) => { x.fillStyle = 'rgba(0,0,0,0.28)'; x.beginPath(); x.arc(X + tr * 0.55, Y + tr * 0.55, tr, 0, PI * 2); x.fill(); x.fillStyle = b.tree; x.beginPath(); x.arc(X, Y, tr, 0, PI * 2); x.fill(); x.fillStyle = 'rgba(255,255,255,0.14)'; x.beginPath(); x.arc(X - tr * 0.35, Y - tr * 0.35, tr * 0.45, 0, PI * 2); x.fill(); }, tx, ty, 8 * k);
+    }
+    // yollar + köy
+    if (b.village) {
+      const vx = px + rand(-0.3, 0.3) * r, vy = py + rand(-0.3, 0.3) * r;
+      wrapDraw((X, Y) => { x.strokeStyle = '#c9b48a'; x.lineWidth = 1.8 * k; x.beginPath(); x.moveTo(X - r * 0.9, Y + r * 0.2); x.quadraticCurveTo(X, Y - r * 0.3, X + r * 0.85, Y + r * 0.1); x.stroke(); }, vx, vy, r);
+      for (let h = 0; h < 9; h++) {
+        const hx = vx + rand(-14, 14) * k, hy = vy + rand(-10, 10) * k, hw = rand(3, 5) * k, hh = rand(2.5, 4) * k, roof = ['#b5482f', '#8f3b2a', '#6d6f73', '#c45c3a'][h % 4];
+        wrapDraw((X, Y) => { x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(X + 1.2 * k, Y + 1.2 * k, hw, hh); x.fillStyle = roof; x.fillRect(X, Y, hw, hh); x.fillStyle = 'rgba(255,255,255,0.18)'; x.fillRect(X, Y, hw, hh / 2); }, hx, hy, 8 * k);
+      }
     }
   });
+  // 3) bölgeye özel detaylar
+  if (bi === 1) { // çöl: kum tepesi sırtları
+    x.strokeStyle = 'rgba(120,80,40,0.18)'; x.lineWidth = 2 * k;
+    for (let i = 0; i < 140; i++) { const px = Math.random() * TS, py = Math.random() * TS, w = rand(20, 60) * k; x.beginPath(); x.moveTo(px, py); x.bezierCurveTo(px + w * 0.3, py - 6 * k, px + w * 0.7, py + 6 * k, px + w, py); x.stroke(); }
+  }
+  if (bi === 2) { // kutup: yüzen buz kütleleri
+    for (let i = 0; i < 40; i++) { const px = Math.random() * TS, py = Math.random() * TS, r = rand(5, 16) * k; wrapDraw((X, Y) => { x.fillStyle = 'rgba(0,30,60,0.25)'; blob(x, X + 2 * k, Y + 2 * k, r, 'rgba(0,30,60,0.25)', 1.4, i); blob(x, X, Y, r, '#eef6fb', 1.4, i); }, px, py, r * 1.5); }
+  }
   if (b.lava) {
-    x.strokeStyle = '#ff7a1a'; x.lineWidth = 3 * TK; x.shadowColor = '#ff5a00'; x.shadowBlur = 12 * TK;
-    for (let i = 0; i < 16; i++) { let px = Math.random() * TS, py = Math.random() * TS; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 7; k++) { px += rand(-30, 30) * TK; py += rand(-30, 30) * TK; x.lineTo(px, py); } x.stroke(); }
+    x.strokeStyle = '#ff7a1a'; x.lineWidth = 3 * k; x.shadowColor = '#ff5a00'; x.shadowBlur = 14 * k;
+    for (let i = 0; i < 16; i++) { let px = Math.random() * TS, py = Math.random() * TS; x.beginPath(); x.moveTo(px, py); for (let s = 0; s < 8; s++) { px += rand(-30, 30) * k; py += rand(-30, 30) * k; x.lineTo(px, py); } x.stroke(); }
     x.shadowBlur = 0;
   }
   const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(320 / TILE, 320 / TILE); t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t; };
@@ -1137,12 +1173,12 @@ const clouds = [];
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _c = new THREE.Color();
 function makeInst(geo, mat, max) { const im = new THREE.InstancedMesh(geo, mat, max); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.count = 0; im.frustumCulled = false; gameScene.add(im); return im; }
 const IM = {
-  mg: makeInst(new THREE.CylinderGeometry(0.12, 0.12, 1.2, 12).rotateX(PI / 2), MB(0xfff27a), 700),
+  mg: makeInst(new THREE.CylinderGeometry(0.12, 0.12, 1.2, 12).rotateX(PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 2.0, 2.6) }), 700),
   laser: makeInst(new THREE.CylinderGeometry(0.14, 0.14, 3.2, 12).rotateX(PI / 2), MB(0xb0ffff), 300),
   plasma: makeInst(new THREE.SphereGeometry(0.5, 16, 12), MB(0xffb0ff), 500),
   missile: makeInst(new THREE.ConeGeometry(0.24, 1.1, 12).rotateX(-PI / 2), MB(0xffc070), 200),
-  eb: makeInst(new THREE.SphereGeometry(0.42, 14, 10), MB(0xffd2b0), 900),
-  ebBig: makeInst(new THREE.SphereGeometry(0.66, 16, 12), MB(0xffb4e6), 300),
+  eb: makeInst(new THREE.SphereGeometry(0.42, 14, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 0.25, 0.45) }), 900),
+  ebBig: makeInst(new THREE.SphereGeometry(0.66, 16, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.35, 2.6) }), 300),
   coin: makeInst(new THREE.CylinderGeometry(0.6, 0.6, 0.16, 28).rotateX(PI / 2), M(0xffd23a, { emissive: 0x6a4800, metalness: 1, roughness: 0.2 }), 150),
   gem: makeInst(new THREE.OctahedronGeometry(0.72), MP(0x5ff2ff, { emissive: 0x157a7a, metalness: 0.3, roughness: 0.05 }), 60),
   power: makeInst(new THREE.BoxGeometry(1.2, 1.2, 1.2), MP(0x7aff5a, { emissive: 0x2a8a10 }), 30),
@@ -1338,6 +1374,7 @@ function clearEB(x, y, R) { clearEBLocal(x, y, R); N(['cb', r1(x), r1(y), r1(R)]
 function addEnemy(type, o) {
   const T = ETYPES[type];
   const e = Object.assign({ id: G.nextId++, type, hp: T.hp * G.hpMul, r: T.r, t: 0, ft: rand(0.5, 1.4) * T.fire, stun: 0, flash: 0, vx: 0, vy: -8, armored: G.armored, ground: !!T.ground, pat: 'down', heading: PI }, o);
+  if (G.players.length > 1) e.hp *= 1.15;
   e.maxHp = e.hp; attachEnemyMesh(e); G.enemies.push(e); return e;
 }
 function dusmanModeli(type, arm) {
@@ -1533,18 +1570,18 @@ function updateBoss(dt) {
   // taretler: hedefli seri atış
   b.tur.forEach((t, i) => {
     if (!t.alive || !tp) return; t.ft -= dt * fm;
-    if (t.ft <= 0) { t.ft = (b.phase === 1 ? 1.6 : 1.15) * rand(0.85, 1.15); const n = b.phase === 1 ? 3 : 5, tx = b.x + BOSS_TUR[i][0], ty = b.y + BOSS_TUR[i][1];
+    if (t.ft <= 0) { t.ft = (b.phase === 1 ? 2.8 : 2.1) * rand(0.85, 1.15); const n = b.phase === 1 ? 2 : 3, tx = b.x + BOSS_TUR[i][0], ty = b.y + BOSS_TUR[i][1];
       for (let k = 0; k < n; k++) G.timers.push({ t: k * 0.09, fn: () => { if (G && G.boss && t.alive && !G.boss.dead) { const p2 = nearestPlayer(tx, ty); if (p2) aimed(G.boss.x + BOSS_TUR[i][0], G.boss.y + BOSS_TUR[i][1], p2, sp * 1.15); } } }); }
   });
   // çekirdek: yelpaze
-  b.ft -= dt * fm; if (b.ft <= 0) { b.ft = b.phase === 1 ? 1.5 : 1.15; fan(b.x, b.y - 4, -PI / 2, 9 + b.phase * 2 + Math.floor(G.stage / 15), 1.7, sp * 0.85, 1); }
+  b.ft -= dt * fm; if (b.ft <= 0) { b.ft = b.phase === 1 ? 2.6 : 2.1; fan(b.x, b.y - 4, -PI / 2, 5 + b.phase + Math.floor(G.stage / 25), 1.5, sp * 0.75, 1); }
   // faz 2+: çift spiral
-  if (b.phase >= 2) { b.ft3 -= dt; if (b.ft3 <= 0) { b.ft3 = lerp(0.14, 0.075, Math.min(1, G.stage / 50)); b.ang += 0.33; for (let a = 0; a < (b.phase === 3 ? 3 : 2); a++) { const an = b.ang + a * PI * 2 / (b.phase === 3 ? 3 : 2); spawnEB(b.x, b.y - 1.5, Math.cos(an) * sp * 0.72, Math.sin(an) * sp * 0.72); } } }
+  if (b.phase >= 2 && Math.sin(b.t * 0.9) > 0) { b.ft3 -= dt; if (b.ft3 <= 0) { b.ft3 = lerp(0.3, 0.17, Math.min(1, G.stage / 50)); b.ang += 0.42; for (let a = 0; a < 2; a++) { const an = b.ang + a * PI; spawnEB(b.x, b.y - 1.5, Math.cos(an) * sp * 0.6, Math.sin(an) * sp * 0.6); } } }
   // faz 2+: hızlı hedefli mızrak atışı
-  if (b.phase >= 2 && tp) { b.ft2 -= dt * fm; if (b.ft2 <= 0) { b.ft2 = 2.2; for (let k = 0; k < 7; k++) G.timers.push({ t: k * 0.06, fn: () => { if (G && G.boss && !G.boss.dead) { const p2 = nearestPlayer(G.boss.x, G.boss.y); if (p2) aimed(G.boss.x, G.boss.y - 3, p2, sp * 1.6, 0, 1); } } }); } }
+  if (b.phase >= 2 && tp) { b.ft2 -= dt * fm; if (b.ft2 <= 0) { b.ft2 = 3.4; for (let k = 0; k < 4; k++) G.timers.push({ t: k * 0.06, fn: () => { if (G && G.boss && !G.boss.dead) { const p2 = nearestPlayer(G.boss.x, G.boss.y); if (p2) aimed(G.boss.x, G.boss.y - 3, p2, sp * 1.35, 0, 1); } } }); } }
   // faz 3: halka + destek uçakları
   if (b.phase === 3) {
-    b.ft4 -= dt; if (b.ft4 <= 0) { b.ft4 = 2.4; ringShot(b.x, b.y, 22, sp * 0.62, b.t, 1); }
+    b.ft4 -= dt; if (b.ft4 <= 0) { b.ft4 = 3.8; ringShot(b.x, b.y, 14, sp * 0.55, b.t, 1); }
     b.summonT -= dt; if (b.summonT <= 0) { b.summonT = 8; for (let i = 0; i < 3; i++) addEnemy('jet', { x: (i - 1) * 9, y: SPAWN_Y + i * 2, pat: 'dive', vy: -12 }); }
   }
   for (const p of G.players) if (p.alive && p.inv <= 0 && Math.abs(p.x - b.x) < 9 && Math.abs(p.y - b.y) < 3) hitPlayer(p, 45 * G.dmgMul);
@@ -1717,7 +1754,7 @@ function updateSim(dt) {
   updatePlayersSim(dt);
   if (G.phase === 'waves') {
     G.waveT -= dt;
-    if (G.waveT <= 0 && G.wavesDone < G.wavesTotal) { spawnWave(); G.wavesDone++; G.waveT = rand(2.3, 3.4) / (1 + (G.stage - 1) * 0.006) / (1 + (G.m - 1) * 0.08); }
+    if (G.waveT <= 0 && G.wavesDone < G.wavesTotal) { spawnWave(); if (G.players.length > 1 && Math.random() < 0.6) spawnWave(); G.wavesDone++; G.waveT = rand(2.3, 3.4) / (1 + (G.stage - 1) * 0.006) / (1 + (G.m - 1) * 0.08); }
     if (G.wavesDone >= G.wavesTotal && (G.enemies.length === 0 || G.waveT < -12)) {
       if (G.hasBoss) { G.phase = 'warn'; G.warnT = 3.2; E(['s', 'alarm']); E(['msg', '⚠ UYARI ⚠<small>Bölüm sonu canavarı yaklaşıyor!</small>', 3]); }
       else { G.phase = 'clear'; G.endT = 2.4; E(['msg', '✔ GÖREV ' + G.m + '/4 TAMAMLANDI', 2.2]); }
@@ -1781,6 +1818,7 @@ function buildSnap() {
 // ===================== YEREL KONTROL =====================
 const keys = { left: 0, right: 0, up: 0, down: 0, fire: 0 };
 let drag = null, mouseFire = false, touchFire = false;
+let dokunmaModu = isTouch && !(window.matchMedia && matchMedia("(pointer: fine)").matches);
 function localControl(dt) {
   const p = G.players[G.me]; if (!p) return;
   if (G.mode === 'guest') { if (p.bombT > 0) p.bombT -= dt; if (p.auxCd > 0) p.auxCd -= dt; }
@@ -1792,7 +1830,7 @@ function localControl(dt) {
   const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy), mx = p.st.speed * 1.6 * dt;
   if (d > mx) { p.x += dx / d * mx; p.y += dy / d * mx; } else { p.x = p.tx; p.y = p.ty; }
   p.x = clamp(p.x, -FX + 1, FX - 1); p.y = clamp(p.y, FY_BOT + 2, FY_TOP - 10);
-  p.firing = S.autoFire || keys.fire || mouseFire || touchFire || (isTouch && !S.autoFire && !!drag);
+  p.firing = dokunmaModu ? (!!drag || touchFire) : (S.autoFire || keys.fire || mouseFire);
 }
 
 // ===================== ÇİZİM =====================
@@ -1856,7 +1894,7 @@ function renderGame(dt) {
   for (const b of G.eb) { if (b.big) { if (bb < 300) setInst(IM.ebBig, bb++, b.x, b.y, FLY_H, 0, pulse); } else if (a < 900) setInst(IM.eb, a++, b.x, b.y, FLY_H, 0, pulse); }
   IM.eb.count = a; IM.ebBig.count = bb; IM.eb.instanceMatrix.needsUpdate = true; IM.ebBig.instanceMatrix.needsUpdate = true;
   const pc = { coin: 0, gem: 0, power: 0, heal: 0 };
-  for (const q of G.pickups) { const im = IM[q.type]; const i = pc[q.type]++; if (i >= 150) continue; setInst(im, i, q.x, q.y, FLY_H, G.time * 3 + q.id, 1, q.type === 'coin' ? 0.5 : 0); }
+  for (const q of G.pickups) { const im = IM[q.type]; const i = pc[q.type]++; if (i >= 150) continue; setInst(im, i, q.x, q.y, FLY_H, G.time * 3 + q.id, q.type === 'coin' ? 1.45 : 1.15, q.type === 'coin' ? 0.5 : 0); }
   for (const k of PICK_LIST) { IM[k].count = pc[k]; IM[k].instanceMatrix.needsUpdate = true; }
   // halı bombardımanı bombaları
   let bd = 0;
@@ -1902,7 +1940,7 @@ function updateHUD(dt) {
   const bB = $('#btnBomb'), bA = $('#btnAux');
   bB.style.setProperty('--p', bp); bB.classList.toggle('ready', bp >= 100);
   bA.style.setProperty('--p', ap); bA.classList.toggle('ready', ap >= 100);
-  $('#btnFire').classList.toggle('hidden', !(isTouch && !S.autoFire));
+  $('#btnFire').classList.add('hidden');
   const rm = $('#respawnMsg');
   if (!p.alive && !G.over) rm.innerHTML = 'VURULDUN!<br><span style="font-size:20px">Yeniden doğuş: ' + Math.ceil(Math.max(0, p.respawn)) + '</span>';
   else if (G.over) rm.innerHTML = 'OYUN BİTTİ'; else rm.innerHTML = '';
@@ -2006,11 +2044,29 @@ function netReset() {
   try { c && c.close(); } catch (e) { } try { p && p.destroy(); } catch (e) { }
   Net.role = null; Net.remote = null; Net.status = 'off'; updateMpChip();
 }
+async function iceAl() {
+  const ice = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+  const c = window.GK_TURN || {};
+  if (Array.isArray(c.sunucular)) ice.push(...c.sunucular);
+  if (c.meteredUygulama && c.meteredApiKey) {
+    try {
+      const r = await fetch('https://' + c.meteredUygulama + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(c.meteredApiKey));
+      if (r.ok) { const j = await r.json(); if (Array.isArray(j)) ice.push(...j); }
+    } catch (e) { console.warn('TURN bilgisi alınamadı', e); }
+  }
+  Net.turnVar = ice.some(s => /^turns?:/.test(Array.isArray(s.urls) ? s.urls[0] : String(s.urls)));
+  return ice;
+}
+function turnAyarli() { const c = window.GK_TURN || {}; return !!((c.meteredUygulama && c.meteredApiKey) || (Array.isArray(c.sunucular) && c.sunucular.length)); }
 function peerOk() { if (typeof Peer === 'undefined') { toast('Çok oyunculu kütüphane (PeerJS) yüklenemedi. İnternet bağlantısını kontrol edin.'); return false; } return true; }
 function netHost() {
   if (!peerOk()) return; netReset();
   Net.role = 'host'; Net.code = String(rint(1000, 9999)); Net.status = 'hosting';
-  const peer = new Peer(PEER_PREFIX + Net.code, { debug: 1 }); Net.peer = peer;
+  iceAl().then(ice => { if (Net.role !== 'host' || Net.peer) return; netHostPeer(ice); });
+  renderMp();
+}
+function netHostPeer(ice) {
+  const peer = new Peer(PEER_PREFIX + Net.code, { debug: 1, config: { iceServers: ice } }); Net.peer = peer;
   peer.on('open', () => renderMp());
   peer.on('connection', c => {
     if (Net.conn && Net.conn.open) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 400); }); return; }
@@ -2023,10 +2079,13 @@ function netHost() {
 function netJoin(code) {
   if (!peerOk()) return; netReset();
   Net.role = 'guest'; Net.code = code; Net.status = 'connecting'; renderMp();
-  const peer = new Peer({ debug: 1 }); Net.peer = peer;
+  iceAl().then(ice => { if (Net.status !== 'connecting' || Net.peer) return; netJoinPeer(ice, code); });
+  Net.joinTimer = setTimeout(() => { if (Net.status === 'connecting') { toast(turnAyarli() ? 'Bağlantı zaman aşımına uğradı' : 'Bağlanılamadı. Farklı ağlarda oynamak için turn-config.js ayarı gerekir (README).', 5); netReset(); renderMp(); } }, 20000);
+}
+function netJoinPeer(ice, code) {
+  const peer = new Peer({ debug: 1, config: { iceServers: ice } }); Net.peer = peer;
   peer.on('open', () => { const c = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' }); bindConn(c); });
   peer.on('error', err => { toast(err.type === 'peer-unavailable' ? 'Oda bulunamadı: ' + code : 'Bağlantı hatası: ' + err.type); netReset(); renderMp(); });
-  Net.joinTimer = setTimeout(() => { if (Net.status === 'connecting') { toast('Bağlantı zaman aşımına uğradı'); netReset(); renderMp(); } }, 15000);
 }
 function bindConn(c) {
   c.on('open', () => {
@@ -2220,7 +2279,7 @@ function renderHangar() {
   } else if (hTab === 'loadout') {
     h += `<div class="secT">ANA MÜHİMMAT</div><div class="optGrid">` + WEAPONS.map(w => `<button class="opt ${S.weapon === w.id ? 'on' : ''}" data-act="weapon" data-id="${w.id}"><span class="oi">${w.icon}</span><b>${w.name}</b><small>${w.desc}</small></button>`).join('') + `</div>`;
     h += `<div class="secT">ÖZEL BOMBA</div><div class="optGrid">` + BOMBS.map(w => `<button class="opt ${S.bomb === w.id ? 'on' : ''}" data-act="bomb" data-id="${w.id}"><span class="oi">${w.icon}</span><b>${w.name}</b><small>${w.desc}</small></button>`).join('') + `</div>`;
-    h += `<div class="secT">ATIŞ MODU</div><div class="toggleRow" data-act="autofire"><span>🔫 Otomatik Ateş<br><small style="color:var(--mut);font-size:14px">${isTouch ? 'Kapalıyken ekranda ATEŞ butonu çıkar' : 'Kapalıyken J / Z / Fare ile ateş et (F ile aç/kapa)'}</small></span><div class="sw ${S.autoFire ? 'on' : ''}"></div></div>`;
+    h += `<div class="secT">ATIŞ MODU</div><div class="toggleRow" data-act="autofire"><span>🔫 Otomatik Ateş<br><small style="color:var(--mut);font-size:14px">${isTouch ? 'Dokunmatikte: ekrana dokunduğun sürece ateş eder (bu ayar PC içindir)' : 'Kapalıyken J / Z / Fare ile ateş et (F ile aç/kapa)'}</small></span><div class="sw ${S.autoFire ? 'on' : ''}"></div></div>`;
     h += `<div class="secT">YARDIMCI SİLAH</div><p style="color:var(--mut);font-size:15px;margin:2px 4px">🛰️ Tüm uçaklarda: 4 saniyelik <b style="color:#fff">Yan Toplar</b> — ateş hızı +%65 ve çapraz kanat topları. Dolum: 12 sn.</p>`;
   }
   const keepScroll = tb.scrollTop; tb.innerHTML = h; tb.scrollTop = keepScroll;
@@ -2387,6 +2446,7 @@ addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') return;
   if (appState === 'hangar') { if (e.code === 'Enter' && $('#modalWrap').classList.contains('hidden')) takeOff(); return; }
   if (appState !== 'play') return;
+  dokunmaModu = false;
   const k = KEYMAP[e.code]; if (k) { keys[k] = 1; e.preventDefault(); }
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) requestBomb(); }
   if ((e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !e.repeat) requestAux();
@@ -2398,6 +2458,7 @@ addEventListener('blur', () => { Object.keys(keys).forEach(k => keys[k] = 0); mo
 canvas.addEventListener('pointerdown', e => {
   sfx.init();
   if (appState !== 'play' || !G) return;
+  dokunmaModu = e.pointerType === "touch";
   drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
   try { canvas.setPointerCapture(e.pointerId); } catch (er) { }
   if (e.pointerType === 'mouse' && e.button === 0) mouseFire = true;
