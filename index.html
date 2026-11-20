@@ -2048,6 +2048,10 @@ async function iceAl() {
   const ice = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
   const c = window.GK_TURN || {};
   if (Array.isArray(c.sunucular)) ice.push(...c.sunucular);
+  if (c.turnKullanici && c.turnSifre) {
+    const s = c.turnSunucu || 'standard.relay.metered.ca', u = c.turnKullanici.trim(), p = c.turnSifre.trim();
+    ['turn:' + s + ':80', 'turn:' + s + ':80?transport=tcp', 'turn:' + s + ':443', 'turns:' + s + ':443?transport=tcp'].forEach(url => ice.push({ urls: url, username: u, credential: p }));
+  }
   if (c.meteredUygulama && c.meteredApiKey) {
     try {
       const r = await fetch('https://' + c.meteredUygulama + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(c.meteredApiKey));
@@ -2057,7 +2061,7 @@ async function iceAl() {
   Net.turnVar = ice.some(s => /^turns?:/.test(Array.isArray(s.urls) ? s.urls[0] : String(s.urls)));
   return ice;
 }
-function turnAyarli() { const c = window.GK_TURN || {}; return !!((c.meteredUygulama && c.meteredApiKey) || (Array.isArray(c.sunucular) && c.sunucular.length)); }
+function turnAyarli() { const c = window.GK_TURN || {}; return !!((c.turnKullanici && c.turnSifre) || (c.meteredUygulama && c.meteredApiKey) || (Array.isArray(c.sunucular) && c.sunucular.length)); }
 function peerOk() { if (typeof Peer === 'undefined') { toast('Çok oyunculu kütüphane (PeerJS) yüklenemedi. İnternet bağlantısını kontrol edin.'); return false; } return true; }
 function netHost() {
   if (!peerOk()) return; netReset();

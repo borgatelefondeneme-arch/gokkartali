@@ -2,21 +2,22 @@
 //  ÇOK OYUNCULU — FARKLI AĞLAR (farklı Wi-Fi / mobil veri) İÇİN TURN AYARI
 //
 //  Aynı Wi-Fi'deki cihazlar bu ayar olmadan da bağlanır. Farklı ağlardaki
-//  cihazların (ör. biri evde Wi-Fi, diğeri mobil veride) bağlanabilmesi için
-//  bir TURN aktarma sunucusu gerekir.
+//  cihazların bağlanabilmesi için bir TURN aktarma sunucusu gerekir.
 //
-//  Ücretsiz kurulum (ayda 20 GB, bu oyun için fazlasıyla yeter):
-//    1) https://www.metered.ca/tools/openrelay/ adresinden ücretsiz hesap aç.
-//    2) Panelde uygulama adını (ör. "gokkartali" -> gokkartali.metered.live)
-//       ve "TURN Server" bölümündeki API Key'i al.
-//    3) Bu dosyada aşağıdaki iki alanı doldurup GitHub'a kaydet.
-//  Not: Bu anahtar oyun sayfasında herkese görünür; Metered bu anahtarı
-//  tarayıcıda kullanılmak üzere verir. Kotanı panelden takip edebilirsin.
+//  Metered panelinde: TURN Server → Credentials → "gok-kartali-oyun"
+//  kimliğinin USERNAME ve PASSWORD değerlerini aşağıdaki iki alana yapıştır.
+//  (Panelde her birinin yanında kopyalama butonu var; şifre için önce REVEAL.)
+//  Not: Bu bilgiler oyun sayfasında herkese görünür; ücretsiz kotanı
+//  panelden takip edebilirsin, gerekirse kimliği silip yenisini oluştur.
 // =====================================================================
 window.GK_TURN = {
-  meteredUygulama: "gokkartali",   // örnek: "gokkartali"
-  meteredApiKey: "6b00570d344deb238804b6f3",     // Metered panelindeki API Key
-  // Kendi TURN sunucun varsa buraya da ekleyebilirsin:
-  // { urls: "turn:sunucu.adresi:3478", username: "kullanici", credential: "sifre" }
+  turnKullanici: "",   // Metered → Credentials → USERNAME
+  turnSifre: "",       // Metered → Credentials → PASSWORD
+  turnSunucu: "standard.relay.metered.ca",
+
+  // İsteğe bağlı (gelişmiş): Metered TURN API anahtarı ile otomatik kimlik alma
+  meteredUygulama: "",
+  meteredApiKey: "",
+  // Başka TURN sunucuların varsa: { urls: "turn:adres:3478", username: "...", credential: "..." }
   sunucular: []
 };
