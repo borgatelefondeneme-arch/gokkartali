@@ -171,7 +171,8 @@ input{user-select:text;-webkit-user-select:text}
 #centerMsg small{display:block;font-family:Rajdhani;font-size:clamp(17px,2.6vw,24px);font-weight:700;color:#cfe0f7;margin-top:6px;letter-spacing:.5px}
 #centerMsg.show{opacity:1}
 #respawnMsg{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);font-family:Orbitron;font-size:28px;text-align:center;pointer-events:none;text-shadow:0 0 12px #000}
-#pcHint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:14px;color:rgba(232,241,255,.55);white-space:nowrap;pointer-events:none}
+#pcHint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:14px;color:rgba(232,241,255,.55);white-space:nowrap;pointer-events:none;max-width:70vw;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:560px){#hud .hudTop{gap:6px;padding-left:6px;padding-right:6px}.hpBox{width:24vw}.stBox{max-width:30vw}.lootBox{flex-direction:column;gap:0!important;font-size:12px!important;line-height:1.2}.stBox b{font-size:11px}.lootBox{font-size:14px;gap:6px}#hud .iconBtn{width:44px;height:44px;font-size:20px}.hbox{padding:4px 7px}.rb{width:88px;height:88px}#btnBomb{width:100px;height:100px}.rb .ri{font-size:30px}#mateBox{width:44vw}}
 .ctl{position:absolute;right:calc(16px + env(safe-area-inset-right));bottom:calc(18px + env(safe-area-inset-bottom));display:flex;gap:14px;align-items:flex-end}
 .rb{--p:100;width:104px;height:104px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:15px;line-height:1;border:3px solid rgba(255,255,255,.35);background:radial-gradient(circle,rgba(10,20,40,.75) 55%,transparent 56%),conic-gradient(var(--c) calc(var(--p)*1%),rgba(255,255,255,.08) 0);box-shadow:0 6px 18px rgba(0,0,0,.4);touch-action:none}
 .rb .ri{font-size:36px;margin-bottom:4px}
@@ -258,6 +259,8 @@ input{user-select:text;-webkit-user-select:text}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 'use strict';
@@ -319,12 +322,12 @@ const BIOMES = [
   { name: 'Volkan', water: false, deep: '#1d1412', sea: '#2b1f1c', sand: '#5a3a2a', land: '#3d2b25', land2: '#2b1f1b', tree: '#ff6a1a', fog: 0x51302a, lava: true },
 ];
 const ETYPES = {
-  fighter: { hp: 12, r: 1.3, gold: 5, xp: 6, fire: 2.3 },
-  jet: { hp: 9, r: 1.2, gold: 6, xp: 7, fire: 2.8 },
-  bomber: { hp: 75, r: 2.6, gold: 20, xp: 26, fire: 1.7 },
-  heli: { hp: 32, r: 1.7, gold: 11, xp: 13, fire: 1.4 },
-  boat: { hp: 48, r: 1.9, gold: 15, xp: 16, fire: 1.9, ground: true },
-  tank: { hp: 48, r: 1.7, gold: 15, xp: 16, fire: 1.9, ground: true },
+  fighter: { hp: 26, r: 1.3, gold: 5, xp: 6, fire: 2.3 },
+  jet: { hp: 22, r: 1.2, gold: 6, xp: 7, fire: 2.8 },
+  bomber: { hp: 150, r: 2.6, gold: 20, xp: 26, fire: 1.7 },
+  heli: { hp: 55, r: 1.7, gold: 11, xp: 13, fire: 1.4 },
+  boat: { hp: 70, r: 1.9, gold: 15, xp: 16, fire: 1.9, ground: true },
+  tank: { hp: 70, r: 1.7, gold: 15, xp: 16, fire: 1.9, ground: true },
 };
 for (const k in ETYPES) ETYPES[k].r *= 1.3;
 const ETYPE_LIST = Object.keys(ETYPES);
@@ -744,16 +747,30 @@ function addCosmetics(g, K, c, opt) {
 }
 function buildPlaneModel(id, cos, opt = {}) {
   const c = Object.assign(defaultCos(id), cos || {});
+  if (GLB[PLANE_GLB[id]]) {
+    const g = new THREE.Group(), m = glbKlon(PLANE_GLB[id]); g.add(m);
+    if (c.paint !== defaultCos(id).paint) { const am = anaMalzeme(m), P = PAINTS[c.paint]; if (am) { am.color.set(P.c); am.map = null; am.metalness = P.metal ? 0.9 : 0.35; am.roughness = P.metal ? 0.2 : 0.4; am.needsUpdate = true; } }
+    g.userData.flames = [];
+    if (id !== 'p40') { const gl = cosItem('glow', c.glow) || COS.glow[0]; const f = flame(0.32, 1.8, gl.f, 3.1); g.add(f); g.userData.flames.push(f); }
+    g.userData.groundY = -0.9;
+    return g;
+  }
   const K = makeKit(c);
   const g = (PLANE_BUILDERS[id] || mP40)(K, c);
   addCosmetics(g, K, c, opt);
   g.traverse(o => { if (o.isMesh && !(o.material && o.material.blending === THREE.AdditiveBlending)) { o.castShadow = true; } });
   return g;
 }
-function disposeTree(o) { o.traverse(m => { if (m.isMesh) { m.geometry && m.geometry.dispose(); const mats = Array.isArray(m.material) ? m.material : [m.material]; mats.forEach(mt => { if (mt) { if (mt.map && !Object.values(decalTexCache).includes(mt.map)) mt.map.dispose(); mt.dispose(); } }); } }); }
+function disposeTree(o) { o.traverse(m => { if (m.isMesh && m.userData.glb) { (Array.isArray(m.material) ? m.material : [m.material]).forEach(mt => mt && mt.dispose()); return; } if (m.isMesh) { m.geometry && m.geometry.dispose(); const mats = Array.isArray(m.material) ? m.material : [m.material]; mats.forEach(mt => { if (mt) { if (mt.map && !Object.values(decalTexCache).includes(mt.map)) mt.map.dispose(); mt.dispose(); } }); } }); }
 
 // ===================== PİLOT MODELLERİ =====================
 function buildPilot(pd) {
+  if (GLB.pilot) {
+    const g = new THREE.Group(), m = glbKlon('pilot'); g.add(m);
+    const renk = new THREE.Color(pd.color);
+    glbMalzemeler(m, mt => { if (mt.color && (mt.color.r + mt.color.g + mt.color.b) / 3 > 0.55) mt.color.lerp(renk, 0.55); });
+    return g;
+  }
   const g = new THREE.Group();
   const suit = M(pd.color, { roughness: 0.75, metalness: 0.05 }), dark = M(0x2a2f38, { roughness: 0.6 }), skin = M(0xe2b48c, { metalness: 0, roughness: 0.7 });
   const helm = MP(0xf0f3f7, { metalness: 0.2, roughness: 0.25 }), visor = MP(0x15233a, { metalness: 1, roughness: 0.03 });
@@ -883,30 +900,80 @@ function buildBoss(variant) {
   const g = new THREE.Group(); g.rotation.y = PI; wrap.add(g);
   const hue = [0x7a2a2a, 0x2a3f7a, 0x3f6b2a, 0x5a2a7a][variant % 4];
   const body = MP(hue, { metalness: 0.6, roughness: 0.3 }), dk = M(0x22272f, { metalness: 0.75, roughness: 0.35 }), plate = M(0x4a505a, { metalness: 0.85, roughness: 0.3 });
-  g.add(mesh(wingGeo([[0, 4.2], [8.6, -1.4], [8.6, -2.6], [3, -1.8], [0, -3.3], [-3, -1.8], [-8.6, -2.6], [-8.6, -1.4]], 0.9), body));
-  const hull = latheZ([[-5.6, 0.2], [-4.6, 1.2], [-2.5, 1.85], [1, 1.95], [3.4, 1.6], [3.9, 1.2]], 40, dk); hull.scale.y = 0.65; g.add(hull);
-  [-1, 1].forEach(s => {
-    g.add(mesh(new THREE.BoxGeometry(2.4, 0.3, 1.2), plate, s * 4.5, 0.55, -0.2));
-    [2.6, 5.4].forEach(x => {
-      g.add(latheZ([[0.6, 0.66], [1.4, 0.7], [2.5, 0.6]], 28, dk, s * x, 0, 0));
-      g.add(mesh(new THREE.CircleGeometry(0.5, 24), MB(0xff7a2a), s * x, 0, 2.52));
-      const f = flame(0.45, 2.2, 0xff7a2a, 2.55, s * x, 0); g.add(f); u.flames.push(f);
+  const hazir = glbKlon('boss');
+  let ust = 1.0;
+  if (hazir) {
+    // Hazır model: yatay basık (tepeden görünüm için), bölüme göre renk tonu
+    hazir.scale.set(1 / BOSS_SCALE * 1.15, 0.42, 1 / BOSS_SCALE * 1.15);
+    const ton = new THREE.Color(hue).lerp(new THREE.Color(0xffffff), 0.35);
+    glbMalzemeler(hazir, m => { if (m.color) m.color.multiply(ton); });
+    g.add(hazir); ust = 3.2;
+    [-1, 1].forEach(s => { const f = flame(0.7, 3.0, 0xff7a2a, 4.5, s * 3.2, 0); g.add(f); u.flames.push(f); });
+  } else {
+    g.add(mesh(wingGeo([[0, 4.2], [8.6, -1.4], [8.6, -2.6], [3, -1.8], [0, -3.3], [-3, -1.8], [-8.6, -2.6], [-8.6, -1.4]], 0.9), body));
+    const hull = latheZ([[-5.6, 0.2], [-4.6, 1.2], [-2.5, 1.85], [1, 1.95], [3.4, 1.6], [3.9, 1.2]], 40, dk); hull.scale.y = 0.65; g.add(hull);
+    [-1, 1].forEach(s => {
+      g.add(mesh(new THREE.BoxGeometry(2.4, 0.3, 1.2), plate, s * 4.5, 0.55, -0.2));
+      [2.6, 5.4].forEach(x => {
+        g.add(latheZ([[0.6, 0.66], [1.4, 0.7], [2.5, 0.6]], 28, dk, s * x, 0, 0));
+        g.add(mesh(new THREE.CircleGeometry(0.5, 24), MB(0xff7a2a), s * x, 0, 2.52));
+        const f = flame(0.45, 2.2, 0xff7a2a, 2.55, s * x, 0); g.add(f); u.flames.push(f);
+      });
     });
-    for (let i = 0; i < 4; i++) g.add(mesh(new THREE.SphereGeometry(0.1, 10, 8), MB(i % 2 ? 0xff3344 : 0xffcc33), s * (1.5 + i * 1.7), 0.5, -1 + i * 0.5));
-  });
-  const core = mesh(new THREE.SphereGeometry(1.05, 32, 20), MB(0xff2a44), 0, 1.0, 0.6); g.add(core); u.core = core;
-  const ring = mesh(new THREE.TorusGeometry(1.4, 0.12, 12, 48).rotateX(PI / 2), MB(0xffaa33), 0, 1.0, 0.6); g.add(ring); u.bring = ring;
-  BOSS_TUR.forEach((p, i) => {
-    const t = new THREE.Group(); t.position.set(p[0] / BOSS_SCALE, 1.0, -p[1] / BOSS_SCALE);
+  }
+  const core = mesh(new THREE.SphereGeometry(1.05, 32, 20), MB(0xff2a44), 0, ust, 0.6); g.add(core); u.core = core;
+  const ring = mesh(new THREE.TorusGeometry(1.4, 0.12, 12, 48).rotateX(PI / 2), MB(0xffaa33), 0, ust, 0.6); g.add(ring); u.bring = ring;
+  BOSS_TUR.forEach((p) => {
+    const t = new THREE.Group(); t.position.set(p[0] / BOSS_SCALE, ust, -p[1] / BOSS_SCALE);
     t.add(mesh(new THREE.CylinderGeometry(0.85, 1.0, 0.45, 28), plate));
     t.add(mesh(new THREE.SphereGeometry(0.7, 28, 16, 0, PI * 2, 0, PI / 2), dk, 0, 0.2, 0));
     t.add(cylZ(0.11, 0.14, 1.6, 12, M(0x111111, { metalness: 0.8 }), -0.95, -0.2, 0.35)); t.add(cylZ(0.11, 0.14, 1.6, 12, M(0x111111, { metalness: 0.8 }), -0.95, 0.2, 0.35));
     t.add(mesh(new THREE.SphereGeometry(0.16, 12, 8), MB(0xff3344), 0, 0.6, 0.2));
     wrap.add(t); u.turrets.push(t);
   });
+  u.ust = ust;
   shadowize(wrap);
   return wrap;
 }
+
+// ===================== HAZIR 3D MODELLER (GLB) =====================
+// Poly Pizza (CC0 / CC-BY) modelleri, Blender ile yön/ölçek normalleştirildi. Yüklenemezse kodla çizilen modeller kullanılır.
+const GLB = {};
+const GLB_LIST = ['oyuncu_p40', 'oyuncu_f16', 'oyuncu_a10', 'oyuncu_f22', 'oyuncu_x99', 'dusman_avci', 'dusman_jet', 'dusman_bombardiman', 'dusman_helikopter', 'dusman_tank', 'boss', 'pilot', 'fuze', 'bomba'];
+const PLANE_GLB = { p40: 'oyuncu_p40', f16: 'oyuncu_f16', a10: 'oyuncu_a10', f22: 'oyuncu_f22', x99: 'oyuncu_x99' };
+const ENEMY_GLB = { fighter: 'dusman_avci', jet: 'dusman_jet', bomber: 'dusman_bombardiman', heli: 'dusman_helikopter', tank: 'dusman_tank' };
+function glbKlon(ad) {
+  const t = GLB[ad]; if (!t) return null;
+  const c = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(t) : t.clone(true);
+  c.traverse(o => { if (o.isMesh) { o.castShadow = true; o.userData.glb = true; o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone(); } });
+  return c;
+}
+function glbMalzemeler(root, fn) { root.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(fn); }); }
+function anaMalzeme(root) {   // en çok üçgene sahip malzeme = gövde boyası
+  const say = new Map();
+  root.traverse(o => { if (o.isMesh) { const n = (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => say.set(m, (say.get(m) || 0) + n)); } });
+  let best = null, bn = -1; say.forEach((n, m) => { if (n > bn) { bn = n; best = m; } }); return best;
+}
+function glbTekGeometri(ad) {   // instanced kullanım için en büyük parçanın geometrisi
+  const t = GLB[ad]; if (!t) return null; t.updateMatrixWorld(true);
+  let best = null, bn = -1;
+  t.traverse(o => { if (o.isMesh) { const n = o.geometry.attributes.position.count; if (n > bn) { bn = n; best = o; } } });
+  if (!best) return null;
+  return { geo: best.geometry.clone().applyMatrix4(best.matrixWorld), mat: Array.isArray(best.material) ? best.material[0] : best.material };
+}
+function glbYukle(bitti) {
+  if (!THREE.GLTFLoader) { bitti(); return; }
+  const L = new THREE.GLTFLoader(); let kalan = GLB_LIST.length;
+  const tek = () => { if (--kalan === 0) bitti(); };
+  GLB_LIST.forEach(ad => L.load('models/' + ad + '.glb', g => { GLB[ad] = g.scene; tek(); }, undefined, () => { console.warn('Model yüklenemedi:', ad); tek(); }));
+}
+const KREDILER = [
+  ['P-40 Sparrow', 'Aeroplane', 'Gilang Romadhan', 'CC-BY'], ['F-16 Falcon', 'Jet', 'Poly by Google', 'CC-BY'], ['A-10 Warthog', 'Jet', 'Poly by Google', 'CC-BY'],
+  ['F-22 Raptor', 'Jet', 'jeremy', 'CC-BY'], ['X-99 Valkyrie', 'Low poly Fighter', 'Stephen Graybill', 'CC0'], ['Düşman avcı', 'Airplane', 'Poly by Google', 'CC0'],
+  ['Düşman jet', 'Spaceship', 'Liz Reddington', 'CC-BY'], ['Bombardıman', 'Spaceship', 'Quaternius', 'CC0'], ['Helikopter', 'Helicopter', 'kazuma', 'CC0'],
+  ['Tank', 'Tank', 'Quaternius', 'CC0'], ['Boss', 'Spaceship', 'Quaternius', 'CC0'], ['Pilot', 'Astronaut', 'PW Wu', 'CC-BY'],
+  ['Füze', 'Missile', 'Jarlan Perez', 'CC-BY'], ['Bomba', 'Bomb', 'Quaternius', 'CC0'],
+];
 
 // ===================== ORTAM YANSIMASI (Environment map) =====================
 function makeEnv(top, bot, panels) {
@@ -959,8 +1026,8 @@ function setHangarPreview(planeId, pilotId, cos) {
   const key = planeId + JSON.stringify(c);
   if (key !== hPlaneKey) {
     if (hPlaneModel) { hPlaneHolder.remove(hPlaneModel); disposeTree(hPlaneModel); }
-    hPlaneModel = buildPlaneModel(planeId, c, { gear: true }); hPlaneModel.scale.setScalar(H_SCALE); hPlaneHolder.add(hPlaneModel); hPlaneKey = key;
-    hPlaneHolder.position.y = 0.5 - hPlaneModel.userData.groundY * H_SCALE;
+    hPlaneModel = buildPlaneModel(planeId, c, { gear: true }); const hs = GLB[PLANE_GLB[planeId]] ? 0.95 : H_SCALE; hPlaneModel.scale.setScalar(hs); hPlaneHolder.add(hPlaneModel); hPlaneKey = key;
+    hPlaneHolder.position.y = 0.5 - hPlaneModel.userData.groundY * hs;
   }
   if (!hPilotCache[pilotId]) { hPilotCache[pilotId] = buildPilot(pilotDef(pilotId)); }
   if (hPilotModel !== hPilotCache[pilotId]) { if (hPilotModel) hPilotHolder.remove(hPilotModel); hPilotModel = hPilotCache[pilotId]; hPilotHolder.add(hPilotModel); }
@@ -982,7 +1049,8 @@ function animModel(m, dt, power) {
 }
 
 // ===================== OYUN SAHNESİ =====================
-const FLY_H = 4, FX = 17, FY_TOP = 34, FY_BOT = -20, SPAWN_Y = 42;
+const FLY_H = 4, FX = 17, FY_TOP = 34, FY_BOT = -20;
+let SPAWN_Y = 42;
 const gameScene = new THREE.Scene();
 gameScene.environment = makeEnv(0xa8d0ff, 0x355070, false);
 const gHemi = new THREE.HemisphereLight(0xdff0ff, 0x3a4a3a, 0.5); gameScene.add(gHemi);
@@ -1059,8 +1127,8 @@ const clouds = [];
 {
   const cm = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, depthWrite: false, roughness: 1 });
   for (let i = 0; i < 10; i++) {
-    const g = new THREE.Group(); const n = rint(4, 7);
-    for (let k = 0; k < n; k++) { const s = mesh(new THREE.SphereGeometry(rand(1.6, 3.2), 20, 14), cm, rand(-3.5, 3.5), rand(-0.5, 0.5), rand(-2, 2)); s.scale.y = 0.5; g.add(s); }
+    const g = new THREE.Group(); const n = rint(4, 7); const cmi = cm.clone(); g.userData.mat = cmi;
+    for (let k = 0; k < n; k++) { const s = mesh(new THREE.SphereGeometry(rand(1.6, 3.2), 20, 14), cmi, rand(-3.5, 3.5), rand(-0.5, 0.5), rand(-2, 2)); s.scale.y = 0.5; g.add(s); }
     g.position.set(rand(-45, 45), rand(1.4, 2.4), rand(-110, 30)); g.userData.sp = rand(0.8, 1.3); g.renderOrder = 3;
     clouds.push(g); gameScene.add(g);
   }
@@ -1100,9 +1168,9 @@ function fxBoom(x, y, size = 1, h = FLY_H) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * PI * 2, sp = rand(2, 9) * Math.sqrt(size);
     const hot = Math.random();
-    spawnPart(x, y, h, Math.cos(a) * sp, Math.sin(a) * sp, rand(-2, 4), rand(0.35, 0.85), rand(0.8, 1.8) * Math.sqrt(size), 1, 0.55 + hot * 0.4, 0.15 + hot * 0.3);
+    spawnPart(x, y, h, Math.cos(a) * sp, Math.sin(a) * sp, rand(-2, 4), rand(0.35, 0.85), rand(0.8, 1.8) * Math.sqrt(size), 1, 0.4 + hot * 0.35, 0.08 + hot * 0.18);
   }
-  for (let i = 0; i < 4 * size; i++) spawnPart(x + rand(-0.5, 0.5) * size, y + rand(-0.5, 0.5) * size, h, 0, 0, 0, 0.25, 2.2 * size, 1, 1, 0.85, 2.5);
+  for (let i = 0; i < 2 * size; i++) spawnPart(x + rand(-0.5, 0.5) * size, y + rand(-0.5, 0.5) * size, h, 0, 0, 0, 0.22, 1.5 * size, 1, 0.78, 0.42, 2.0);
   if (size >= 1.8) fxRing(x, y, 5 * size, 0xffaa55, 0.45);
   sfx.explode(size);
   if (size >= 2) G && (G.shake = Math.max(G.shake, 0.25 * size));
@@ -1129,26 +1197,31 @@ function toast(t, dur = 2.6) { const el = $('#toast'); el.textContent = t; el.cl
 // ===================== KAMERA =====================
 function rayToH(nx, ny, h) {
   const v = new THREE.Vector3(nx, ny, 0.5).unproject(camera); const dir = v.sub(camera.position).normalize();
-  const t = (h - camera.position.y) / dir.y; return camera.position.clone().add(dir.multiplyScalar(t));
+  if (dir.y > -1e-3) return camera.position.clone().add(dir.multiplyScalar(2000)); const t = (h - camera.position.y) / dir.y; return camera.position.clone().add(dir.multiplyScalar(t));
 }
 let WPP = 0.05;
+let CAMPAN = 0;   // dar ekranda kameranın yatay takip payı
 function layoutGameCamera() {
   const asp = innerWidth / innerHeight; camera.aspect = asp; camera.clearViewOffset();
-  // Yatay ekranda daha alçak ve perspektifli kamera: oyuncu ekranın alt kısmında büyük görünür
   const land = asp >= 1;
-  camera.fov = land ? 44 : 50;
-  const tilt = THREE.MathUtils.degToRad(land ? 52 : 60);
-  const target = new THREE.Vector3(0, FLY_H, land ? -3 : -6);
-  let d = 20;
-  for (; d < 170; d += 0.5) {
-    camera.position.set(target.x, target.y + Math.sin(tilt) * d, target.z + Math.cos(tilt) * d);
+  // Alçak, perspektifli "takip" kamerası: oyuncu ekrana yakın ve büyük, düşmanlar uzaktan küçük gelir
+  camera.fov = land ? 50 : 60;
+  const tilt = THREE.MathUtils.degToRad(land ? 44 : 47);
+  const W = land ? FX + 0.5 : 12.5;            // görünen yarım genişlik (oyuncu satırında)
+  const target = new THREE.Vector3(0, FLY_H, land ? -4 : -2);
+  let top = 60;
+  for (let d = 12; d < 170; d += 0.5) {
+    camera.position.set(0, target.y + Math.sin(tilt) * d, target.z + Math.cos(tilt) * d);
     camera.lookAt(target); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
-    const top = -rayToH(0, 1, FLY_H).z, bot = -rayToH(0, -1, FLY_H).z, w = rayToH(1, -0.55, FLY_H).x;
-    if (top >= FY_TOP - (land ? 2 : 0) && bot <= FY_BOT - 0.5 && w >= FX + 1) break;
+    const bot = -rayToH(0, -1, FLY_H).z, w = rayToH(1, -0.6, FLY_H).x;
+    top = -rayToH(0, 1, FLY_H).z;
+    if (bot <= FY_BOT - 0.5 && w >= W && top >= FY_TOP + 4) break;
   }
+  CAMPAN = Math.max(0, FX - W);
+  SPAWN_Y = clamp(top + 4, 42, 70);
   CAM0.copy(camera.position);
-  const a = new THREE.Vector3(-FX, FLY_H, 12).project(camera), b = new THREE.Vector3(FX, FLY_H, 12).project(camera);
-  WPP = (2 * FX) / Math.max(50, (b.x - a.x) / 2 * innerWidth);
+  const a = new THREE.Vector3(-W, FLY_H, 12).project(camera), b = new THREE.Vector3(W, FLY_H, 12).project(camera);
+  WPP = (2 * W) / Math.max(50, (b.x - a.x) / 2 * innerWidth);
 }
 function layoutHangarCamera() {
   const w = innerWidth, h = innerHeight, asp = w / h; camera.aspect = asp;
@@ -1201,7 +1274,7 @@ function newRun(mode, stage, profs, me) {
     mode, me, k, L: lm.L, m: lm.m, stage: d, hasBoss: boss, bi, biome: BIOMES[bi], time: 0, scroll: 7, enemies: [], eb: [], pb: [], missiles: [], pickups: [], boss: null, bossMesh: null, timers: [], netEv: [], nextId: 1,
     hpMul: 1 + (d - 1) * 0.1, rewMul: 1 + (d - 1) * 0.07, dmgMul: 1 + (d - 1) * 0.03, fireMul: 1 + (d - 1) * 0.015, bSpd: 13 * (1 + (d - 1) * 0.006),
     wavesTotal: 8 + lm.m * 2 + Math.floor(lm.L / 10), wavesDone: 0, waveT: 2.5, phase: 'waves', warnT: 0, bossStart: 0, bossTime: null, shake: 0, paused: false, over: false, endT: 0,
-    lives: mode === 'single' ? 3 : Infinity, armored: lm.L >= 15, snapT: 0, inT: 0, progress: 0, enemyMap: new Map(), hudT: 0, ended: false
+    lives: mode === 'single' ? 3 : Infinity, drops: [], armored: lm.L >= 15, snapT: 0, inT: 0, progress: 0, enemyMap: new Map(), hudT: 0, ended: false
   };
   G.players = profs.map((pr, i) => makePlayer(pr, i, profs.length));
   const mp = profs.length > 1 ? 0.6 : 1;
@@ -1267,22 +1340,48 @@ function addEnemy(type, o) {
   const e = Object.assign({ id: G.nextId++, type, hp: T.hp * G.hpMul, r: T.r, t: 0, ft: rand(0.5, 1.4) * T.fire, stun: 0, flash: 0, vx: 0, vy: -8, armored: G.armored, ground: !!T.ground, pat: 'down', heading: PI }, o);
   e.maxHp = e.hp; attachEnemyMesh(e); G.enemies.push(e); return e;
 }
-function attachEnemyMesh(e) { e.key = e.type + (e.armored ? 'A' : ''); e.mesh = getUnitMesh(e.key, () => ENEMY_BUILD[e.type](e.armored)); e.rx = e.x; e.ry = e.y; }
+function dusmanModeli(type, arm) {
+  const ad = ENEMY_GLB[type];
+  if (GLB[ad]) { const g = new THREE.Group(), m = glbKlon(ad); if (arm) glbMalzemeler(m, mt => { if (mt.color) mt.color.multiplyScalar(0.55); mt.metalness = Math.max(mt.metalness || 0, 0.6); }); g.add(m); return g; }
+  return ENEMY_BUILD[type](arm);
+}
+function attachEnemyMesh(e) { e.key = e.type + (e.armored ? 'A' : ''); e.mesh = getUnitMesh(e.key, () => dusmanModeli(e.type, e.armored)); e.rx = e.x; e.ry = e.y; }
 function spawnWave() {
   const s = G.stage, extra = Math.min(5, Math.floor(s / 12) + (G.m >= 3 ? 1 : 0));
-  const pool = ['line', 'v', 'sine', 'dive', 'heli'];
-  if (s >= 2 || G.wavesDone > 3) pool.push('jets', 'jets');
+  const pool = ['line', 'v', 'sine', 'dive', 'heli', 'swoop', 'swoop', 'loop'];
+  if (s >= 1.3 || G.wavesDone > 2) pool.push('jets', 'behind');
+  if (G.m >= 2 || s >= 2) pool.push('behind', 'swoop', 'loop');
   if (G.wavesDone % 4 === 3) pool.push('bomber', 'bomber', 'bomber');
   pool.push('ground');
   const type = pool[rint(0, pool.length - 1)];
+  const tarafi = () => (Math.random() < 0.5 ? -1 : 1);
   switch (type) {
-    case 'line': { const n = 4 + extra; for (let i = 0; i < n; i++) addEnemy('fighter', { x: (i - (n - 1) / 2) * 3.6, y: SPAWN_Y + (i % 2) * 1.5, pat: 'down', vy: -8 }); break; }
+    case 'line': { const n = 4 + extra; for (let i = 0; i < n; i++) addEnemy('fighter', { x: (i - (n - 1) / 2) * 3.4, y: SPAWN_Y + (i % 2) * 1.5, pat: 'down', vy: -8, rollT: i % 2 ? 0.9 : 0 }); break; }
     case 'v': { const n = 5 + extra, cx = rand(-6, 6); for (let i = 0; i < n; i++) { const off = i - (n - 1) / 2; addEnemy('fighter', { x: cx + off * 2.8, y: SPAWN_Y + Math.abs(off) * 2.5, pat: 'down', vy: -9 }); } break; }
     case 'sine': { const n = 5 + extra, cx = rand(-7, 7); for (let i = 0; i < n; i++) addEnemy('fighter', { x: cx, x0: cx, y: SPAWN_Y + i * 3.2, pat: 'sine', vy: -8, amp: rand(5, 8), freq: 1.6 }); break; }
-    case 'dive': { const n = 4 + Math.floor(extra / 2); for (let i = 0; i < n; i++) addEnemy('fighter', { x: rand(-14, 14), y: SPAWN_Y + i * 4, pat: 'dive', vy: -11 }); break; }
-    case 'jets': { const n = 3 + Math.floor(extra / 2), side = Math.random() < 0.5 ? -1 : 1; for (let i = 0; i < n; i++) addEnemy('jet', { x: side * (FX + 4 + i * 3), y: SPAWN_Y - 8 - i * 3, pat: 'cross', vx: -side * 12, vy: -9 }); break; }
+    case 'dive': { const n = 4 + Math.floor(extra / 2); for (let i = 0; i < n; i++) addEnemy('fighter', { x: rand(-14, 14), y: SPAWN_Y + i * 4, pat: 'dive', vy: -11, rollT: 0.9 }); break; }
+    case 'jets': { const n = 3 + Math.floor(extra / 2), side = tarafi(); for (let i = 0; i < n; i++) addEnemy('jet', { x: side * (FX + 4 + i * 3), y: rand(18, 30) - i * 2, pat: 'cross', vx: -side * 13, vy: -6, rollT: 0.9 }); break; }
+    // Yandan kavis çizerek giriş: ekranın yanından içeri girip aşağı döner
+    case 'swoop': {
+      const n = 4 + Math.floor(extra / 2), side = tarafi(), y0 = rand(16, 28), tip = Math.random() < 0.35 ? 'jet' : 'fighter';
+      for (let i = 0; i < n; i++) addEnemy(tip, { x: side * (FX + 4 + i * 2.6), y: y0 + i * 0.6, pat: 'arc', ang: side > 0 ? PI : 0, angV: side > 0 ? 1.5 : -1.5, sp: 13, turnT: 1.05, delay: i * 0.25, rollT: 0.9 });
+      break;
+    }
+    // Arkadan baskın: oyuncunun altından hızla yukarı çıkıp takla atarak geri döner
+    case 'behind': {
+      const n = 3 + Math.floor(extra / 2), x0 = rand(-12, 12);
+      E(['msg', '⚠ ARKADAN!', 1.0]);
+      for (let i = 0; i < n; i++) addEnemy(Math.random() < 0.5 ? 'jet' : 'fighter', { x: x0 + (i - (n - 1) / 2) * 3, y: FY_BOT - 6 - i * 2.5, pat: 'behind', ang: PI / 2, angV: 0, sp: 20, rollT: 0.9 });
+      break;
+    }
+    // Yukarıdan gelip ekranın ortasında tam bir döngü (looping) yapar
+    case 'loop': {
+      const n = 3 + Math.floor(extra / 2), x0 = rand(-9, 9), yon = tarafi();
+      for (let i = 0; i < n; i++) addEnemy('fighter', { x: x0, y: SPAWN_Y + i * 3.4, pat: 'loop', ang: -PI / 2, angV: 0, sp: 12, loopY: rand(16, 22), yon, rollT: 0 });
+      break;
+    }
     case 'heli': { const n = 2 + Math.floor(extra / 2); for (let i = 0; i < n; i++) addEnemy('heli', { x: rand(-FX + 3, FX - 3), y: SPAWN_Y + i * 4, pat: 'hover', vy: -7, hoverY: rand(12, 25), hoverT: rand(4, 7) }); break; }
-    case 'bomber': { addEnemy('bomber', { x: rand(-7, 7), y: SPAWN_Y + 3, pat: 'down', vy: -3.2 }); if (s >= 10) addEnemy('bomber', { x: rand(-7, 7), y: SPAWN_Y + 12, pat: 'down', vy: -3.2 }); break; }
+    case 'bomber': { addEnemy('bomber', { x: rand(-7, 7), y: SPAWN_Y + 3, pat: 'down', vy: -3.2 }); if (s >= 6) addEnemy('bomber', { x: rand(-7, 7), y: SPAWN_Y + 12, pat: 'down', vy: -3.2 }); break; }
     case 'ground': { const n = 2 + Math.floor(extra / 2), tp = G.biome.water ? 'boat' : 'tank'; for (let i = 0; i < n; i++) addEnemy(tp, { x: rand(-FX + 3, FX - 3), y: SPAWN_Y + 6 + i * 7, pat: 'ground' }); break; }
   }
 }
@@ -1367,7 +1466,9 @@ function doBomb(p) {
       E(['s', 'nuke']); E(['sh', 1.0]); E(['msg', '💥 HALI BOMBARDIMANI', 1.2]);
       const px = p.x, py = p.y;
       for (let i = 0; i < 10; i++) for (const col of [-4.6, 0, 4.6]) {
-        G.timers.push({ t: i * 0.085 + Math.abs(col) * 0.012, fn: () => { const x = px + col * rad + rand(-1, 1), y = py + 5 + i * 4.4; E(['x', r1(x), r1(y), 1.5 * rad, 0.6]); areaDamage(x, y, 3.8 * rad, dmgB, p.idx); clearEB(x, y, 3.8 * rad); } });
+        const dl = 0.3 + i * 0.085 + Math.abs(col) * 0.012, tx = px + col * rad, ty = py + 5 + i * 4.4;
+        G.drops.push({ x0: px, y0: py, x: tx, y: ty, t: 0, d: dl });
+        G.timers.push({ t: dl, fn: () => { const x = tx + rand(-1, 1), y = ty; E(['x', r1(x), r1(y), 1.5 * rad, 0.6]); areaDamage(x, y, 3.8 * rad, dmgB, p.idx); clearEB(x, y, 3.8 * rad); } });
       }
       break;
     }
@@ -1412,7 +1513,7 @@ function spawnBoss() {
 function attachBossMesh() {
   const v = (G.L - 1) % 4; if (!bossCache[v]) bossCache[v] = buildBoss(v); const bm = G.bossMesh = bossCache[v];
   bm.visible = true; bm.scale.setScalar(BOSS_SCALE); bm.userData.turrets.forEach(t => t.visible = true);
-  if (!bm.userData.shieldM) { const s = mesh(new THREE.SphereGeometry(2.6, 32, 20), MADD(0x66ccff, 0.22), 0, 1.0, -0.6); bm.add(s); bm.userData.shieldM = s; }
+  if (!bm.userData.shieldM) { const s = mesh(new THREE.SphereGeometry(2.6, 32, 20), MADD(0x66ccff, 0.22), 0, bm.userData.ust || 1.0, -0.6); bm.add(s); bm.userData.shieldM = s; }
   gameScene.add(bm);
 }
 function bossShielded(b) { return b.tur && b.tur.some(t => t.alive); }
@@ -1483,9 +1584,12 @@ function updatePlayersSim(dt) {
     if (p.firing) { p.fireT -= dt; if (p.fireT <= 0) fireWeapon(p); }
   }
 }
+function yonHareket(e, dt, mv) { e.x += Math.cos(e.ang) * e.sp * dt * mv; e.y += Math.sin(e.ang) * e.sp * dt * mv; }
 function updateEnemies(dt) {
   for (let i = G.enemies.length - 1; i >= 0; i--) {
     const e = G.enemies[i]; e.t += dt; if (e.stun > 0) e.stun -= dt; if (e.flash > 0) e.flash -= dt;
+    if (e.rollT > 0) e.rollT -= dt;
+    if (e.delay > 0) { e.delay -= dt; continue; }
     const mv = e.stun > 0 ? 0.35 : 1;
     switch (e.pat) {
       case 'down': e.y += e.vy * dt * mv; e.x += Math.sin(e.t * 1.2 + e.id) * 1.5 * dt * mv; break;
@@ -1498,11 +1602,24 @@ function updateEnemies(dt) {
       case 'ground': e.y -= G.scroll * dt; break;
       case 'dive':
         e.y += e.vy * dt * mv;
-        if (!e.dived && e.y < 20) { const tp = nearestPlayer(e.x, e.y); e.vx = tp ? clamp((tp.x - e.x) * 0.8, -11, 11) : 0; e.dived = true; }
+        if (!e.dived && e.y < 20) { const tp = nearestPlayer(e.x, e.y); e.vx = tp ? clamp((tp.x - e.x) * 0.8, -11, 11) : 0; e.dived = true; e.rollT = 0.9; }
         e.x += (e.vx || 0) * dt * mv; break;
+      case 'arc':     // yandan kavisli giriş: dönüş süresi boyunca dön, sonra aşağı devam et
+        if (e.turnT > 0) { e.turnT -= dt; e.ang += e.angV * dt * mv; }
+        yonHareket(e, dt, mv); break;
+      case 'behind':  // arkadan yukarı tırman, tepede takla atıp geri dön
+        if (!e.turned && e.y > rand(14, 20)) { e.turned = true; e.turnLeft = PI / 2.6; e.angV = (e.x > 0 ? 1 : -1) * 2.6; e.rollT = 0.9; }
+        if (e.turnLeft > 0) { const d = Math.abs(e.angV) * dt; e.turnLeft -= d; e.ang += e.angV * dt; if (e.turnLeft <= 0) e.ang = -PI / 2; e.sp = Math.max(11, e.sp - 8 * dt); }
+        yonHareket(e, dt, mv); break;
+      case 'loop':    // aşağı in, ortada tam döngü yap, sonra devam et
+        if (!e.looped && e.y < e.loopY) { e.looped = true; e.loopLeft = PI * 2; e.rollT = 0.9; }
+        if (e.loopLeft > 0) { const d = 2.6 * dt; e.loopLeft -= d; e.ang += d * e.yon; if (e.loopLeft <= 0) e.ang = -PI / 2; }
+        yonHareket(e, dt, mv); break;
     }
-    if (e.stun <= 0 && e.y < FY_TOP + 2 && e.y > FY_BOT + 9 && Math.abs(e.x) < FX + 1) { e.ft -= dt * G.fireMul; if (e.ft <= 0) { e.ft = ETYPES[e.type].fire * rand(0.85, 1.25); enemyFire(e); } }
-    if (e.y < FY_BOT - 8 || e.x < -FX - 16 || e.x > FX + 16) { removeEnemyAt(i); continue; }
+    const kaciyor = e.pat === 'behind' && !e.turned;     // arkadan gelen düşman dönmeden ateş etmez
+    if (!kaciyor && e.stun <= 0 && e.y < FY_TOP + 2 && e.y > FY_BOT + 9 && Math.abs(e.x) < FX + 1) { e.ft -= dt * G.fireMul; if (e.ft <= 0) { e.ft = ETYPES[e.type].fire * rand(0.85, 1.25); enemyFire(e); } }
+    const disari = e.pat === 'behind' && !e.turned ? (e.y > SPAWN_Y + 20) : (e.y < FY_BOT - 8);
+    if (disari || e.x < -FX - 18 || e.x > FX + 18 || e.y > SPAWN_Y + 40) { removeEnemyAt(i); continue; }
     if (!e.ground) for (const p of G.players) {
       if (!p.alive || p.inv > 0) continue;
       if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < (e.r + 0.8) ** 2) { hitPlayer(p, 30 * G.dmgMul); damageEnemy(e, 60 * G.hpMul, p.idx); break; }
@@ -1631,7 +1748,7 @@ function applySnap(s) {
   for (const a of s.e) {
     const id = a[0]; seen.add(id); let e = G.enemyMap.get(id);
     if (!e) { e = { id, type: ETYPE_LIST[a[1]], x: a[2], y: a[3], tx: a[2], ty: a[3], armored: !!(a[6] & 2), ground: !!ETYPES[ETYPE_LIST[a[1]]].ground, r: ETYPES[ETYPE_LIST[a[1]]].r, hp: 1, heading: PI, flash: 0, stun: 0 }; attachEnemyMesh(e); G.enemyMap.set(id, e); G.enemies.push(e); }
-    e.tx = a[2]; e.ty = a[3]; e.hpf = a[4]; e.stun = (a[5] & 1) ? 1 : 0; if (a[5] & 2) e.flash = 0.07;
+    e.tx = a[2]; e.ty = a[3]; e.hpf = a[4]; e.stun = (a[5] & 1) ? 1 : 0; e.rolling = !!(a[5] & 4); if (a[5] & 2) e.flash = 0.07;
   }
   for (let i = G.enemies.length - 1; i >= 0; i--) { const e = G.enemies[i]; if (!seen.has(e.id)) { G.enemyMap.delete(e.id); removeEnemyAt(i); } }
   const pm = new Map(G.pickups.map(q => [q.id, q])); G.pickups = [];
@@ -1652,7 +1769,7 @@ function applySnap(s) {
 }
 function buildSnap() {
   const s = { t: 's', ph: G.phase, pr: r2(G.progress) };
-  s.e = G.enemies.map(e => [e.id, ETYPE_LIST.indexOf(e.type), r1(e.x), r1(e.y), Math.round(e.hp / e.maxHp * 100), (e.stun > 0 ? 1 : 0) | (e.flash > 0 ? 2 : 0), e.armored ? 2 : 0]);
+  s.e = G.enemies.map(e => [e.id, ETYPE_LIST.indexOf(e.type), r1(e.x), r1(e.y), Math.round(e.hp / e.maxHp * 100), (e.stun > 0 ? 1 : 0) | (e.flash > 0 ? 2 : 0) | (e.rollT > 0 ? 4 : 0), e.armored ? 2 : 0]);
   s.k = G.pickups.map(q => [q.id, PICK_LIST.indexOf(q.type), r1(q.x), r1(q.y)]);
   s.p = G.players.map(p => [r1(p.x), r1(p.y), Math.round(p.hp), p.alive ? 1 : 0, r1(p.respawn), p.inv > 0 ? 1 : 0, p.power, p.firing ? 1 : 0, p.auxT > 0 ? 1 : 0]);
   const b = G.boss;
@@ -1682,7 +1799,7 @@ function localControl(dt) {
 function renderGame(dt) {
   if (!G) return;
   const tex = ground.material.map; if (tex && G.phase !== 'over') tex.offset.y += G.scroll * dt / TILE;
-  for (const c of clouds) { c.position.z += G.scroll * 1.6 * c.userData.sp * dt; if (c.position.z > 40) { c.position.z = -120 - rand(0, 30); c.position.x = rand(-45, 45); } }
+  for (const c of clouds) { c.userData.mat.opacity = 0.38 * clamp((-c.position.z - 2) / 22, 0, 1); c.position.z += G.scroll * 1.6 * c.userData.sp * dt; if (c.position.z > 40) { c.position.z = -120 - rand(0, 30); c.position.x = rand(-45, 45); } }
   // oyuncular
   for (const p of G.players) {
     const isMe = p.idx === G.me;
@@ -1704,7 +1821,8 @@ function renderGame(dt) {
     if (!e.ground && (Math.abs(mvx) + Math.abs(mvy)) > 0.001) { const want = Math.atan2(-mvx, mvy); let da = want - e.heading; while (da > PI) da -= 2 * PI; while (da < -PI) da += 2 * PI; e.heading += da * Math.min(1, dt * 6); }
     placeAt(m, e.x, e.y, e.ground ? 0.35 : FLY_H);
     inner.rotation.y = e.ground ? PI : e.heading;
-    inner.rotation.z = e.ground ? 0 : clamp(mvx / Math.max(dt, 0.001) / 20, -0.6, 0.6);
+    if (e.rollT > 0 || e.rolling) e.rollA = (e.rollA || 0) + dt * 7.0; else e.rollA = 0;
+    inner.rotation.z = e.ground ? 0 : clamp(mvx / Math.max(dt, 0.001) / 20, -0.6, 0.6) + e.rollA;
     m.scale.setScalar((e.flash > 0 ? 1.13 : 1) * (ESCALE[e.type] || 1.3));
     animModel(inner, dt, 1);
     if (inner.userData.turret) { const tp = G.players.find(p => p.alive) || G.players[0]; const a = Math.atan2(-(tp.rx - e.x), (tp.ry - e.y)); inner.userData.turret.rotation.y = a - PI; }
@@ -1740,6 +1858,10 @@ function renderGame(dt) {
   const pc = { coin: 0, gem: 0, power: 0, heal: 0 };
   for (const q of G.pickups) { const im = IM[q.type]; const i = pc[q.type]++; if (i >= 150) continue; setInst(im, i, q.x, q.y, FLY_H, G.time * 3 + q.id, 1, q.type === 'coin' ? 0.5 : 0); }
   for (const k of PICK_LIST) { IM[k].count = pc[k]; IM[k].instanceMatrix.needsUpdate = true; }
+  // halı bombardımanı bombaları
+  let bd = 0;
+  for (let i = G.drops.length - 1; i >= 0; i--) { const d = G.drops[i]; d.t += dt; const f = d.t / d.d; if (f >= 1) { G.drops.splice(i, 1); continue; } if (IM.bomb && bd < 120) setInst(IM.bomb, bd++, lerp(d.x0, d.x, f), lerp(d.y0, d.y, f), lerp(FLY_H - 0.6, 0.6, f * f), f * 4, 1.1, f * 1.5); }
+  if (IM.bomb) { IM.bomb.count = bd; IM.bomb.instanceMatrix.needsUpdate = true; }
   // parçacıklar
   let n = 0;
   for (let i = parts.length - 1; i >= 0; i--) {
@@ -1752,6 +1874,7 @@ function renderGame(dt) {
   partIM.count = n; partIM.instanceMatrix.needsUpdate = true; if (partIM.instanceColor) partIM.instanceColor.needsUpdate = true;
   for (const r of rings) { if (!r.on) continue; r.t += dt; const t = r.t / r.d; if (t >= 1) { r.on = false; r.m.visible = false; continue; } const s = r.r * (0.1 + 0.9 * Math.sqrt(t)); r.m.scale.set(s, 1, s); r.m.material.opacity = 0.9 * (1 - t); }
   // kamera sarsıntısı
+  { const me = G.players[G.me]; if (me && CAMPAN > 0) CAM0.x = lerp(CAM0.x, clamp(me.rx * 0.8, -CAMPAN, CAMPAN), Math.min(1, dt * 3.5)); }
   if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const s = G.shake * 0.9; camera.position.set(CAM0.x + rand(-s, s), CAM0.y + rand(-s, s), CAM0.z + rand(-s, s)); } else camera.position.copy(CAM0);
 }
 
@@ -2175,6 +2298,7 @@ function openSettings() {
     <div class="toggleRow" data-m="bloom"><span>✨ Parlama Efekti (Bloom)</span><div class="sw ${S.bloom ? 'on' : ''}"></div></div>
     <div class="secT" style="margin-top:14px">İSTATİSTİK</div>
     <p style="margin:4px">Açılan: <b>${stageLabel(S.maxStage)}</b> · Pilot Lv: <b>${S.level}</b> · Uçaklar: <b>${Object.keys(S.planes).length}/5</b> · Pilotlar: <b>${S.pilots.length}/4</b></p>
+    <details style="margin-top:12px"><summary style="cursor:pointer;color:var(--acc);font-weight:700">🎖️ Katkıda Bulunanlar (3D modeller)</summary><div style="font-size:14px;color:#b9cbe6;line-height:1.5;margin-top:6px">${KREDILER.map(k => '<div>' + k[0] + ': <b>' + k[1] + '</b> — ' + k[2] + ' <span style="color:var(--mut)">(' + k[3] + ')</span></div>').join('')}<div style="margin-top:6px">Kaynak: poly.pizza · CC-BY modeller yazarlarına atıfla kullanılmıştır.</div></div></details>
     <div id="cheatBox" class="${cheatShown ? '' : 'hidden'} cheat"><b style="color:#ffb066">🛠 TEST MODU</b><p style="font-size:15px;margin:6px 0">+10 Pilot Lv, +10 harita leveli açar, +5000 altın ve elmas verir. Kullanınca menü kapanır.</p>
       <button class="btn pri wide" data-m="cheat">+10 LEVEL & +5000 ALTIN / ELMAS</button></div>
     <div class="mBtns"><button class="btn danger" data-m="reset">🗑 Kaydı Sıfırla</button><button class="btn go" data-m="close">✔ Kaydet ve Kapat</button></div>
@@ -2357,11 +2481,21 @@ function init() {
   S.stage = clamp(S.stage, 1, S.maxStage);
   pvPlane = S.plane; pvPilot = S.pilot;
   // modelleri önceden ısıt (ilk karede takılmayı önler)
-  ['fighter', 'jet', 'heli'].forEach(t => { const m = getUnitMesh(t, () => ENEMY_BUILD[t](false)); releaseUnitMesh(t, m); });
   appState = 'hangar';
   layoutHangarCamera(); renderHangar();
   $('#hangar').classList.remove('hidden');
-  setTimeout(() => $('#loading').classList.add('hidden'), 350);
+  let yuklendi = false;
+  const bitir = () => { if (yuklendi) return; yuklendi = true; $('#loading').classList.add('hidden'); };
+  $('#loadTxt').textContent = '3D modeller yükleniyor…';
+  glbYukle(() => {
+    Object.keys(unitPools).forEach(k => delete unitPools[k]); Object.keys(bossCache).forEach(k => delete bossCache[k]);
+    Object.keys(hPilotCache).forEach(k => delete hPilotCache[k]); hPlaneKey = '';
+    const fz = glbTekGeometri('fuze'); if (fz) { IM.missile.geometry = fz.geo; IM.missile.material = fz.mat; }
+    const bb = glbTekGeometri('bomba'); if (bb) IM.bomb = makeInst(bb.geo, bb.mat, 120);
+    if (appState === 'hangar') renderHangar();
+    bitir();
+  });
+  setTimeout(bitir, 8000);
   requestAnimationFrame(loop);
   if (typeof Peer === 'undefined') console.warn('PeerJS yüklenemedi — çok oyunculu kullanılamaz.');
 }

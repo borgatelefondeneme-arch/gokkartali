@@ -21,3 +21,23 @@ Ayarlar (⚙️) penceresinin en altındaki **"Gök Kartalı 3D · v1.0"** yazı
 **+10 Level & +5000 Altın/Elmas** butonu açılır.
 
 İlerleme tarayıcının `localStorage` hafızasına otomatik kaydedilir.
+
+## 3D model kredileri
+Hazır modeller [Poly Pizza](https://poly.pizza) üzerinden alınmış, Blender ile yön/ölçek normalleştirilmiştir (`blender/modelleri_normalle.py`).
+
+| Oyundaki rol | Model | Yazar | Lisans |
+|---|---|---|---|
+| P-40 Sparrow | Aeroplane | Gilang Romadhan | CC-BY |
+| F-16 Falcon | Jet | Poly by Google | CC-BY |
+| A-10 Warthog | Jet | Poly by Google | CC-BY |
+| F-22 Raptor | Jet | jeremy | CC-BY |
+| X-99 Valkyrie | Low poly Fighter | Stephen Graybill | CC0 |
+| Düşman avcı | Airplane | Poly by Google | CC0 |
+| Düşman jet | Spaceship | Liz Reddington | CC-BY |
+| Bombardıman | Spaceship | Quaternius | CC0 |
+| Helikopter | Helicopter | kazuma | CC0 |
+| Tank | Tank | Quaternius | CC0 |
+| Boss | Spaceship | Quaternius | CC0 |
+| Pilot | Astronaut | PW Wu | CC-BY |
+| Füze | Missile | Jarlan Perez | CC-BY |
+| Bomba | Bomb | Quaternius | CC0 |

@@ -85,13 +85,22 @@ def mirror_ekle(ob):
 # Yardımcı: profil tablosundan yumuşak (smoothstep) ara değer
 # ---------------------------------------------------------------------
 def tablo(t, noktalar):
+    """Profil noktalarından Catmull-Rom eğrisiyle pürüzsüz (dalgasız) ara değer."""
     if t <= noktalar[0][0]:
         return noktalar[0][1]
-    for (t0, v0), (t1, v1) in zip(noktalar, noktalar[1:]):
+    if t >= noktalar[-1][0]:
+        return noktalar[-1][1]
+    for i in range(len(noktalar) - 1):
+        t0, v0 = noktalar[i]
+        t1, v1 = noktalar[i + 1]
         if t <= t1:
+            vm = noktalar[i - 1][1] if i > 0 else v0 - (v1 - v0)
+            vp = noktalar[i + 2][1] if i + 2 < len(noktalar) else v1 + (v1 - v0)
             u = (t - t0) / (t1 - t0)
-            u = u * u * (3 - 2 * u)
-            return v0 + (v1 - v0) * u
+            m0, m1 = 0.5 * (v1 - vm), 0.5 * (vp - v0)
+            u2, u3 = u * u, u * u * u
+            return ((2 * u3 - 3 * u2 + 1) * v0 + (u3 - 2 * u2 + u) * m0
+                    + (-2 * u3 + 3 * u2) * v1 + (u3 - u2) * m1)
     return noktalar[-1][1]
 
 
@@ -103,10 +112,10 @@ GOVDE_BOY = 18.9
 BURUN_Y = GOVDE_BOY / 2          # +9.45
 KUYRUK_Y = -GOVDE_BOY / 2        # -9.45
 
-GENISLIK = [(0.0, 0.03), (0.06, 0.38), (0.16, 0.70), (0.28, 0.95), (0.38, 1.45),
-            (0.48, 2.05), (0.62, 2.25), (0.80, 2.05), (0.93, 1.65), (1.0, 1.35)]
-YUKSEKLIK = [(0.0, 0.03), (0.06, 0.30), (0.16, 0.52), (0.28, 0.72), (0.40, 0.80),
-             (0.60, 0.74), (0.80, 0.62), (0.93, 0.50), (1.0, 0.42)]
+GENISLIK = [(0.0, 0.03), (0.06, 0.38), (0.16, 0.68), (0.28, 0.98), (0.40, 1.55),
+            (0.52, 2.05), (0.66, 2.2), (0.82, 2.0), (0.93, 1.65), (1.0, 1.4)]
+YUKSEKLIK = [(0.0, 0.03), (0.06, 0.36), (0.16, 0.66), (0.28, 0.92), (0.42, 1.02),
+             (0.60, 0.96), (0.80, 0.80), (0.93, 0.64), (1.0, 0.55)]
 DIKEY_KAYMA = [(0.0, -0.30), (0.12, -0.18), (0.28, 0.0), (1.0, 0.05)]
 # süper-elips üssü: <2 elmas/keskin, 2 elips, >2 kutumsu
 KESKINLIK = [(0.0, 1.35), (0.30, 1.6), (0.55, 2.6), (1.0, 3.0)]
@@ -292,9 +301,9 @@ def kokpit_cami_olustur():
         x, y, z = v.co
         # arkaya doğru incelen damla şekli
         incelme = 1.0 - 0.35 * max(0.0, -y)
-        v.co = Vector((x * 0.56 * incelme, y * 2.5, z * 0.58 * (0.75 + 0.25 * incelme)))
+        v.co = Vector((x * 0.55 * incelme, y * 1.8, z * 0.52 * (0.75 + 0.25 * incelme)))
     ob = obje_olustur("GK_KokpitCami", bm)
-    ob.location = (0, 4.15, 0.55)
+    ob.location = (0, 4.55, 0.78)
     sol = ob.modifiers.new("Kalinlik", 'SOLIDIFY')
     sol.thickness = 0.02
     subdiv_ekle(ob, 1, 2)
@@ -313,7 +322,8 @@ def giris(bsdf, adlar, deger):
 
 def materyal_olustur(ad):
     mat = bpy.data.materials.new(ad)
-    mat.use_nodes = True
+    if bpy.app.version < (5, 0, 0):      # 5.x'te düğümler her zaman açık
+        mat.use_nodes = True
     nt = mat.node_tree
     bsdf = nt.nodes.get("Principled BSDF")
     return mat, nt, bsdf
@@ -322,9 +332,9 @@ def materyal_olustur(ad):
 def materyaller_olustur():
     # 5.1 Hayalet boyası: koyu grafit, hafif metalik, ince vernik, pürüzlülük varyasyonu
     boya, nt, bsdf = materyal_olustur("GK_Boya_Hayalet")
-    giris(bsdf, "Base Color", (0.055, 0.060, 0.068, 1))
-    giris(bsdf, "Metallic", 0.55)
-    giris(bsdf, ["Coat Weight", "Coat"], 0.35)
+    giris(bsdf, "Base Color", (0.030, 0.034, 0.040, 1))
+    giris(bsdf, "Metallic", 0.25)
+    giris(bsdf, ["Coat Weight", "Coat"], 0.2)
     giris(bsdf, "Coat Roughness", 0.18)
     giris(bsdf, ["Specular IOR Level", "Specular"], 0.5)
     tc = nt.nodes.new("ShaderNodeTexCoord")
@@ -333,9 +343,9 @@ def materyaller_olustur():
     gurultu.inputs["Detail"].default_value = 6.0
     rampa = nt.nodes.new("ShaderNodeValToRGB")
     rampa.color_ramp.elements[0].position = 0.35
-    rampa.color_ramp.elements[0].color = (0.30, 0.30, 0.30, 1)
+    rampa.color_ramp.elements[0].color = (0.42, 0.42, 0.42, 1)
     rampa.color_ramp.elements[1].position = 0.70
-    rampa.color_ramp.elements[1].color = (0.48, 0.48, 0.48, 1)
+    rampa.color_ramp.elements[1].color = (0.58, 0.58, 0.58, 1)
     nt.links.new(tc.outputs["Object"], gurultu.inputs["Vector"])
     nt.links.new(gurultu.outputs["Fac"], rampa.inputs["Fac"])
     nt.links.new(rampa.outputs["Color"], bsdf.inputs["Roughness"])
@@ -386,7 +396,8 @@ def gokyuzu_kur():
     sc = bpy.context.scene
     dunya = bpy.data.worlds.get("GK_Dunya") or bpy.data.worlds.new("GK_Dunya")
     sc.world = dunya
-    dunya.use_nodes = True
+    if bpy.app.version < (5, 0, 0):
+        dunya.use_nodes = True
     nt = dunya.node_tree
     nt.nodes.clear()
     sky = nt.nodes.new("ShaderNodeTexSky")
@@ -436,7 +447,7 @@ def kamera_kur():
     cam.dof.aperture_fstop = 5.6
     ob = bpy.data.objects.new("GK_Kamera", cam)
     koleksiyon().objects.link(ob)
-    ob.location = (-15.5, 17.0, 3.2)      # sol-ön, hafif alçak 3/4 açı
+    ob.location = (-25.0, 27.0, 5.5)      # sol-ön, hafif yüksek 3/4 açı
     kisit = ob.constraints.new('TRACK_TO')
     kisit.target = hedef
     kisit.track_axis = 'TRACK_NEGATIVE_Z'
