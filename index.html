@@ -260,7 +260,7 @@ input{user-select:text;-webkit-user-select:text}
     <button class="iconBtn" id="pauseBtn">⏸</button>
   </div>
   <div id="mateBox" class="hbox hidden"><div class="hl"><span id="mateName">P2</span><span id="mateSt"></span></div><div class="bar thin"><i id="mateFill"></i></div></div>
-  <div id="bossBar" class="hidden"><div>☠ BÖLÜM SONU CANAVARI ☠</div><div class="bar"><i id="bossFill"></i></div></div>
+  <div id="bossBar" class="hidden"><div>☠ BOSS ☠</div><div class="bar"><i id="bossFill"></i></div></div>
   <div id="centerMsg"></div>
   <div id="respawnMsg"></div>
   <div id="pcHint">W A S D / Oklar: Uç · Space: Bomba · E: Yardımcı Silah · F: Oto-Ateş · J/Z/Fare: Ateş · P: Menü</div>
@@ -505,19 +505,40 @@ function calcStats(prof) {
 // farkı ve dengeli seviyeler. Kare dalga (sert) yerine sinüs/üçgen ve filtrelenmiş gürültü.
 const sfx = (() => {
   let ctx = null, master = null, sfxBus = null, verbIn = null, beyaz = null, kahve = null; const last = {};
+  // telefon/tablet: küçük hoparlör bası veremez ve çok sayıda eşzamanlı ses cızırtı yapar
+  const MOBIL = isTouch && !(window.matchMedia && matchMedia('(pointer: fine)').matches);
+  const SES_SINIR = MOBIL ? 22 : 48; let aktifSes = 0;
+  function ac() { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => { }); }
   function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    if (ctx) { ac(); return; }
     try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // iPhone sessiz modda da oyun sesi çalsın (Safari 17+)
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      try { ctx = new AC({ latencyHint: MOBIL ? 'balanced' : 'interactive' }); } catch (e) { ctx = new AC(); }
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
-      master = ctx.createGain(); master.gain.value = 0.7;
-      const yumusat = ctx.createBiquadFilter(); yumusat.type = 'lowpass'; yumusat.frequency.value = 9000;
+      master = ctx.createGain(); master.gain.value = MOBIL ? 0.85 : 0.7;
+      // son kat: tavan sınırlayıcı (küçük hoparlörde patlamaları önler)
+      const tavan = ctx.createDynamicsCompressor();
+      tavan.threshold.value = -4; tavan.knee.value = 0; tavan.ratio.value = 20; tavan.attack.value = 0.002; tavan.release.value = 0.12;
+      const yumusat = ctx.createBiquadFilter(); yumusat.type = 'lowpass'; yumusat.frequency.value = MOBIL ? 7000 : 9000;
       sfxBus = ctx.createGain(); sfxBus.gain.value = 1;
-      sfxBus.connect(yumusat); yumusat.connect(comp); comp.connect(master); master.connect(ctx.destination);
-      // kısa yankı: üretilmiş darbe tepkisi
-      const conv = ctx.createConvolver(); const L = Math.floor(ctx.sampleRate * 1.4); const ir = ctx.createBuffer(2, L, ctx.sampleRate);
-      for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < L; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 3.2); }
+      let zincir = yumusat;
+      if (MOBIL) {   // hoparlörün çalamadığı derin bası kes, orta frekansları biraz öne çıkar
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 120; hp.Q.value = 0.7;
+        const orta = ctx.createBiquadFilter(); orta.type = 'peaking'; orta.frequency.value = 1600; orta.gain.value = 3; orta.Q.value = 0.8;
+        yumusat.connect(hp); hp.connect(orta); zincir = orta;
+      }
+      sfxBus.connect(yumusat); zincir.connect(comp); comp.connect(master); master.connect(tavan); tavan.connect(ctx.destination);
+      // iOS kilidini aç: sessiz tek örnek çal
+      { const b = ctx.createBuffer(1, 1, ctx.sampleRate), s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0); }
+      ac();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) ac(); });
+      ['touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, ac, { passive: true }));
+      // kısa yankı: üretilmiş darbe tepkisi (mobilde daha kısa ve tek kanal: daha az işlemci)
+      const conv = ctx.createConvolver(); const L = Math.floor(ctx.sampleRate * (MOBIL ? 0.7 : 1.4)); const ir = ctx.createBuffer(MOBIL ? 1 : 2, L, ctx.sampleRate);
+      for (let ch = 0; ch < ir.numberOfChannels; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < L; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 3.2); }
       conv.buffer = ir; verbIn = ctx.createGain(); verbIn.gain.value = 0.22; const verbOut = ctx.createGain(); verbOut.gain.value = 0.5;
       verbIn.connect(conv); conv.connect(verbOut); verbOut.connect(comp);
       // gürültü tamponları: beyaz (tıslama) ve kahverengi (derin gümbürtü)
@@ -529,20 +550,25 @@ const sfx = (() => {
   }
   function ok(name, gap) {
     if (!ctx || !S.sound) return false;
+    if (ctx.state !== 'running') { ac(); return false; }
     const t = ctx.currentTime;
+    if (MOBIL && gap) gap *= 1.4;
     if (gap && last[name] && t - last[name] < gap) return false;
+    if (aktifSes > SES_SINIR && !/^(ex|hurt|alarm|win|lose|lv|buy|err|click|pow|heal|gem)$/.test(name)) return false;
     last[name] = t; return true;
   }
   const rp = (v, f = 0.06) => v * (1 + (Math.random() * 2 - 1) * f);   // küçük perde farkı: tekrar eden sesler sıkmasın
   function cikis(yankili, pan) {
     let hedef = sfxBus;
-    if (pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(sfxBus); if (yankili) p.connect(verbIn); return p; }
+    if (pan && !MOBIL && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(sfxBus); if (yankili) p.connect(verbIn); return p; }
     if (yankili) { const g = ctx.createGain(); g.connect(sfxBus); g.connect(verbIn); hedef = g; }
     return hedef;
   }
   // zarf: hızlı atak, üstel sönüm
   function ton(tip, f0, f1, sure, ses, gecikme = 0, opt = {}) {
     const t = ctx.currentTime + gecikme, o = ctx.createOscillator(), g = ctx.createGain();
+    if (MOBIL && f0 < 150) { f0 *= 2; if (f1) f1 *= 2; ses *= 0.8; }   // telefonda duyulmayan bası bir oktav yukarı taşı
+    aktifSes++; o.onended = () => { aktifSes--; };
     o.type = tip; o.frequency.setValueAtTime(f0, t); if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + sure);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ses, t + (opt.atak || 0.005)); g.gain.exponentialRampToValueAtTime(0.0001, t + sure);
     let son = g;
@@ -551,6 +577,8 @@ const sfx = (() => {
   }
   function gurultu(tamp, sure, ses, tip, fA, fB, gecikme = 0, opt = {}) {
     const t = ctx.currentTime + gecikme, s = ctx.createBufferSource(); s.buffer = tamp === 'k' ? kahve : beyaz;
+    if (MOBIL && tamp === 'k' && tip === 'lowpass') fA = Math.max(fA, 1400);   // gümbürtü telefonda da duyulsun
+    aktifSes++; s.onended = () => { aktifSes--; };
     const f = ctx.createBiquadFilter(); f.type = tip; f.Q.value = opt.q || 0.8;
     f.frequency.setValueAtTime(fA, t); f.frequency.exponentialRampToValueAtTime(Math.max(30, fB), t + sure);
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ses, t + (opt.atak || 0.004)); g.gain.exponentialRampToValueAtTime(0.0001, t + sure);
@@ -1539,8 +1567,9 @@ function newRun(mode, stage, profs, me, duel) {
     G.rewMul *= Math.min(1.8, 1 + (G.gucK - 1) * 0.04);   // daha zor düşman, biraz daha fazla ödül (en fazla +%80)
   }
   if (G.duel) {
-    G.hasBoss = false; G.phase = 'duel'; G.wavesTotal = 0; G.missions = []; G.skor = [0, 0]; G.raunt = 1; G.lives = Infinity; G.duelPickT = 5;
-    G.players.forEach(p => { p.yon = p.idx === me ? 1 : -1; p.st.maxHp *= 2; p.hp = p.st.maxHp; p.x = p.tx = p.rx = p.px = 0; p.y = p.ty = p.ry = p.yon > 0 ? -14 : FY_BOT + FY_TOP + 14; p.inv = 2.5; });
+    G.hasBoss = false; G.phase = 'duel'; G.wavesTotal = 0; G.missions = []; G.skor = [0, 0]; G.raunt = 1; G.lives = Infinity; G.duelPickT = 8;
+    G.hpMul = 1; G.puan = [0, 0]; G.raundSure = DUEL_SURE; G.duelSpawnT = 1.5;
+    G.players.forEach(p => { p.yon = p.idx === me ? 1 : -1; p.st.maxHp *= 2; p.st.dmg = 1 + (p.st.dmg - 1) * 0.35; p.st.rate = 1 + (p.st.rate - 1) * 0.35; p.hp = p.st.maxHp; p.x = p.tx = p.rx = p.px = 0; p.y = p.ty = p.ry = p.yon > 0 ? -14 : FY_BOT + FY_TOP + 14; p.inv = 2.5; });
   }
   const mp = profs.length > 1 ? 0.6 : 1;
   const kt = Math.round((14 + lm.m * 5 + lm.L * 0.6) * mp), gt = Math.round((90 + lm.m * 35) * G.rewMul * mp);
@@ -1548,7 +1577,7 @@ function newRun(mode, stage, profs, me, duel) {
   G.missions = [
     { txt: `${kt} düşman düşür`, gems: mg, check: (r) => r.kills >= kt },
     { txt: `${fmt(gt)} altın topla`, gems: mg, check: (r) => r.gold >= gt },
-    boss ? { txt: 'Canavarı 90 saniyede yen', gems: mg + 3 + Math.floor(lm.L / 10), check: (r, win, bt) => win && bt != null && bt <= 90 }
+    boss ? { txt: 'Bossu 90 saniyede yen', gems: mg + 3 + Math.floor(lm.L / 10), check: (r, win, bt) => win && bt != null && bt <= 90 }
       : { txt: 'En fazla 3 kez vurul', gems: mg + 1, check: (r, win) => win && r.hits <= 3 },
   ];
   groundMat.map.offset.set(0, 0);
@@ -1574,7 +1603,7 @@ function applyEvent(ev) {
     case 'm': if (G.mode === 'guest') G.missiles.push({ x: ev[1], y: ev[2], vx: ev[3], vy: ev[4], owner: ev[5], life: 4, dmg: 0 }); break;
     case 'bd': if (G.mode === 'guest') { G.phase = 'bossdead'; } break;
     case 'bt': G.bossTime = ev[1]; break;
-    case 'dr': { const ben = ev[1] === G.me; G.skor = [ev[2], ev[3]]; centerMsg((ben ? '🏆 RAUNDU KAZANDIN!' : '💥 RAUNDU KAYBETTİN') + '<small>Skor: SEN ' + G.skor[G.me] + ' - ' + G.skor[1 - G.me] + ' RAKİP</small>', 2.6); if (ben) sfx.win(); else sfx.lose(); break; }
+    case 'dr': { const ben = ev[1] === G.me, ber = ev[1] < 0; G.skor = [ev[2], ev[3]]; const pu = [ev[5] || 0, ev[6] || 0]; centerMsg((ber ? '🤝 BERABERE · RAUNT TEKRAR' : ben ? '🏆 RAUNDU KAZANDIN!' : '💥 RAUNDU KAYBETTİN') + '<small>Vuruş puanı ' + pu[G.me] + ' - ' + pu[1 - G.me] + ' · Raunt skoru SEN ' + G.skor[G.me] + ' - ' + G.skor[1 - G.me] + ' RAKİP</small>', 2.6); if (ber) sfx.click(); else if (ben) sfx.win(); else sfx.lose(); break; }
   }
 }
 function grant(pi, k, n) {
@@ -1671,6 +1700,12 @@ function damageEnemy(e, d, owner) {
 }
 function killEnemy(e, owner) {
   const T = ETYPES[e.type];
+  if (G.duel) {
+    E(['x', r1(e.x), r1(e.y), e.type === 'bomber' ? 2.4 : 1.2, FLY_H]);
+    if (owner >= 0 && !G.raundBitti) { const pt = DUEL_PUAN[e.type] || 1; G.puan[owner] += pt; grant(owner, 'kills', 1); E(['ft', owner, r1(e.x), r1(e.y), '+' + pt + ' 🎯', 'pw']); }
+    if (Math.random() < (e.type === 'bomber' ? 0.4 : 0.03)) addPickup('power', e.x, e.y, 1);
+    const j = G.enemies.indexOf(e); if (j >= 0) removeEnemyAt(j); return;
+  }
   const big = e.type === 'bomber' ? 2.4 : e.ground ? 1.6 : 1.2;
   E(['x', r1(e.x), r1(e.y), big, e.ground ? 0.5 : FLY_H]);
   const gold = Math.round(T.gold * G.rewMul);
@@ -1758,7 +1793,6 @@ function doBomb(p) {
     case 'emp': {
       const R = 24 * rad; E(['r', r1(p.x), r1(p.y), R, 0x66e0ff, 0.7]); E(['r', r1(p.x), r1(p.y), R * 0.6, 0xb0f4ff, 0.5]); E(['s', 'emp']); E(['sh', 0.7]); E(['msg', '🌀 EMP ŞOK DALGASI', 1.2]);
       clearEB(p.x, p.y, R);
-      if (G.duel) G.players.forEach(q => { if (q !== p && q.alive && (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < R * R) hitPlayer(q, dmgB * 0.3); });
       for (const e of G.enemies.slice()) { if ((e.x - p.x) ** 2 + (e.y - p.y) ** 2 < R * R) { e.stun = 3.5; damageEnemy(e, dmgB * 0.8, p.idx); } }
       if (G.boss && !G.boss.dead && (G.boss.x - p.x) ** 2 + (G.boss.y - p.y) ** 2 < (R + 6) ** 2) { damageBoss(dmgB * 0.15, p.idx); G.boss.stun = 2; }
       break;
@@ -1775,7 +1809,6 @@ function doBomb(p) {
 }
 function areaDamage(x, y, R, d, owner) {
   for (const e of G.enemies.slice()) if ((e.x - x) ** 2 + (e.y - y) ** 2 < (R + e.r) ** 2) damageEnemy(e, d, owner);
-  if (G.duel) G.players.forEach(q => { if (q.idx !== owner && q.alive && (q.x - x) ** 2 + (q.y - y) ** 2 < (R + 0.8) ** 2) hitPlayer(q, d * 0.35); });
   const b = G.boss; if (b && !b.dead && !b.entering && Math.abs(b.x - x) < 8 + R && Math.abs(b.y - y) < 3 + R) damageBoss(d * 0.2, owner, x, y);
 }
 function requestBomb() {
@@ -1809,25 +1842,38 @@ function droneGuncelle(p, dt) {
   d.x = lerp(d.x, px + d.taraf * 4.3, Math.min(1, dt * 5)); d.y = lerp(d.y, py - 1.2 * dyon, Math.min(1, dt * 5));
   d.ft -= dt; if (d.ft > 0) return; d.ft = DRONE_ATIS[d.lvl];
   let hedef = null, en = 30 * 30;
-  if (!G.duel) for (const e of G.enemies) { const ex = G.mode === 'guest' ? e.rx : e.x, ey = G.mode === 'guest' ? e.ry : e.y; if ((ey - d.y) * dyon < 0) continue; const q = (ex - d.x) ** 2 + (ey - d.y) ** 2; if (q < en) { en = q; hedef = { x: ex, y: ey }; } }
-  if (G.duel) { const o = G.players.find(q => q !== p && q.alive && !(q.gizliT > 0)); hedef = o ? { x: G.mode === 'guest' ? o.rx : o.x, y: G.mode === 'guest' ? o.ry : o.y } : null; }
+  for (const e of G.enemies) { const ex = G.mode === 'guest' ? e.rx : e.x, ey = G.mode === 'guest' ? e.ry : e.y; if ((ey - d.y) * dyon < 0) continue; const q = (ex - d.x) ** 2 + (ey - d.y) ** 2; if (q < en) { en = q; hedef = { x: ex, y: ey }; } }
   const a = hedef ? Math.atan2(hedef.y - d.y, hedef.x - d.x) : dyon * PI / 2;
   G.pb.push({ x: d.x, y: d.y + 0.6, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60, kind: 'mg', dmg: 10 * p.st.dmg * 0.35 * (1 + d.lvl * 0.25), r: 0.45, pierce: 0, owner: p.idx, cos: G.mode === 'guest' });
 }
-function duelGuncelle(dt) {
-  G.progress = 0;
+const DUEL_SURE = 45, DUEL_PUAN = { fighter: 1, jet: 2, heli: 3, bomber: 5 };
+function duelGuncelle(dt) {     // av yarışı: ortadan iki yana geçen düşmanları kim daha çok vurursa
+  G.progress = 0; if (G.raundBitti) return;
+  G.raundSure -= dt;
+  if (G.raundSure <= 0) { G.raundSure = 0; const [a, b] = G.puan; duelRaundBitir(a === b ? -1 : a > b ? 0 : 1); return; }
+  G.duelSpawnT -= dt;
+  if (G.duelSpawnT <= 0) {
+    const hiz = 1 + (DUEL_SURE - G.raundSure) / DUEL_SURE * 0.6;    // raunt ilerledikçe hızlanır
+    G.duelSpawnT = rand(0.7, 1.2) / hiz;
+    const r = Math.random(), tip = r < 0.5 ? 'fighter' : r < 0.78 ? 'jet' : r < 0.93 ? 'heli' : 'bomber';
+    const side = Math.random() < 0.5 ? -1 : 1, n = tip === 'fighter' && Math.random() < 0.4 ? 3 : 1, y0 = rand(3.5, 10.5);
+    const vx = -side * { fighter: 10, jet: 13, heli: 7, bomber: 5 }[tip] * hiz;
+    for (let i = 0; i < n; i++) addEnemy(tip, { x: side * (EX + 3 + i * 2.6), y: y0 + (n > 1 ? (i - 1) * 1.3 : 0), pat: 'cross', vx, vy: rand(-0.6, 0.6), heading: side > 0 ? PI / 2 : -PI / 2, rollT: 0.9 });
+  }
   G.duelPickT -= dt;
-  if (G.duelPickT <= 0 && !G.raundBitti) { G.duelPickT = rand(6, 9); addPickup(Math.random() < 0.55 ? 'heal' : 'power', rand(-10, 10), (FY_BOT + FY_TOP) / 2, 1); E(['msg', '✨ Ortaya takviye düştü!', 1.2]); }
+  if (G.duelPickT <= 0) { G.duelPickT = rand(9, 13); addPickup('power', rand(-10, 10), (FY_BOT + FY_TOP) / 2, 1); E(['msg', '✨ Ortaya güç takviyesi düştü!', 1.2]); }
 }
 function duelRaundBitir(kazanan) {
   if (G.raundBitti) return; G.raundBitti = true;
-  G.skor[kazanan]++;
-  E(['dr', kazanan, G.skor[0], G.skor[1], G.raunt]);
-  if (G.skor[kazanan] >= 2) G.timers.push({ t: 2.6, fn: () => duelBitir(kazanan) });
+  if (kazanan >= 0) G.skor[kazanan]++;
+  E(['dr', kazanan, G.skor[0], G.skor[1], G.raunt, G.puan[0], G.puan[1]]);
+  if (kazanan >= 0 && G.skor[kazanan] >= 2) G.timers.push({ t: 2.6, fn: () => duelBitir(kazanan) });
   else G.timers.push({ t: 3.0, fn: () => duelRauntSifirla() });
 }
 function duelRauntSifirla() {
-  G.raunt++; G.raundBitti = false; G.eb.length = 0; G.pb.length = 0; G.missiles.length = 0; G.pickups.length = 0; G.duelPickT = 5;
+  G.raunt++; G.raundBitti = false; G.eb.length = 0; G.pb.length = 0; G.missiles.length = 0; G.pickups.length = 0; G.duelPickT = 8;
+  while (G.enemies.length) removeEnemyAt(G.enemies.length - 1);
+  G.puan = [0, 0]; G.raundSure = DUEL_SURE; G.duelSpawnT = 1.5;
   N(['cb', 0, 7, 300]);
   G.players.forEach(p => { p.alive = true; p.hp = p.st.maxHp; p.inv = 2.5; p.bombT = 0; p.auxCd = 0; p.x = p.tx = p.rx = 0; p.y = p.ty = p.ry = p.yon > 0 ? -14 : FY_BOT + FY_TOP + 14; });
   E(['msg', '⚔ RAUNT ' + G.raunt + '<small>Skor ' + G.skor[0] + ' - ' + G.skor[1] + '</small>', 2]); E(['s', 'whoosh']);
@@ -1863,7 +1909,7 @@ function spawnBoss() {
   G.boss = { x: 0, y: SPAWN_Y + 12, ty: FY_TOP - 10, hp, maxHp: hp, t: 0, ft: 1.6, ft2: 2.4, ft3: 0, ft4: 3, ang: 0, entering: true, phase: 1, summonT: 8, dead: false, flash: 0, stun: 0, tx: 0,
     tur: BOSS_TUR.map(() => ({ hp: hp * 0.13, max: hp * 0.13, alive: true, ft: rand(0.6, 1.6), flash: 0 })) };
   G.bossStart = G.time; attachBossMesh();
-  E(['msg', '☠ ' + ['DEMİR KALE', 'GÖK CANAVARI', 'YEŞİL ÖLÜM', 'MOR FIRTINA'][(G.L - 1) % 4] + '<small>Önce 3 taretini yok et — çekirdek kalkanı ancak öyle düşer!</small>', 3]);
+  E(['msg', '☠ ' + ['DEMİR KALE', 'GÖK HÜKÜMDARI', 'YEŞİL ÖLÜM', 'MOR FIRTINA'][(G.L - 1) % 4] + '<small>Önce 3 taretini yok et — çekirdek kalkanı ancak öyle düşer!</small>', 3]);
 }
 function attachBossMesh() {
   const v = (G.L - 1) % 4; if (!bossCache[v]) bossCache[v] = buildBoss(v); const bm = G.bossMesh = bossCache[v];
@@ -1878,7 +1924,7 @@ function updateBoss(dt) {
   b.tur.forEach(t => { if (t.flash > 0) t.flash -= dt; });
   if (b.entering) { b.y = lerp(b.y, b.ty, Math.min(1, dt * 1.1)); if (b.y - b.ty < 0.6) b.entering = false; return; }
   const f = b.hp / b.maxHp; const ph = f > 0.66 ? 1 : f > 0.33 ? 2 : 3;
-  if (ph !== b.phase) { b.phase = ph; E(['msg', 'CANAVAR ÖFKELENDİ!<small>Faz ' + ph + ' — saldırılar yoğunlaşıyor</small>', 1.8]); E(['s', 'alarm']); }
+  if (ph !== b.phase) { b.phase = ph; E(['msg', 'BOSS ÖFKELENDİ!<small>Faz ' + ph + ' — saldırılar yoğunlaşıyor</small>', 1.8]); E(['s', 'alarm']); }
   const tp = nearestPlayer(b.x, b.y);
   // hareket: faz 3'te oyuncunun üstüne doğru atak
   if (b.phase === 3 && tp) b.tx = lerp(b.tx, clamp(tp.x, -9, 9), Math.min(1, dt * 0.8)); else b.tx = Math.sin(b.t * 0.5) * 9;
@@ -1987,16 +2033,16 @@ function updateEnemies(dt) {
         const alttan = !(e.pat === 'behind' && !e.turned) && e.y < FY_BOT - 6;
         const ustten = e.gorundu && e.y > FY_TOP + 8;
         if (yandan || alttan || ustten) {
-          if ((e.donus || 0) < 1 && Math.random() < 0.6) yenidenGir(e);   // kaçtı, birazdan başka yerden geri gelir
+          if (!G.duel && (e.donus || 0) < 1 && Math.random() < 0.6) yenidenGir(e);   // kaçtı, birazdan başka yerden geri gelir
           else { removeEnemyAt(i); continue; }                            // tamamen kaçtı
         }
       }
     }
     const kaciyor = e.pat === 'behind' && !e.turned;     // arkadan gelen düşman dönmeden ateş etmez
-    if (!kaciyor && e.stun <= 0 && e.y < FY_TOP + 2 && e.y > FY_BOT + 9 && Math.abs(e.x) < FX + 1) { e.ft -= dt * G.fireMul; if (e.ft <= 0) { e.ft = ETYPES[e.type].fire * rand(0.85, 1.25); enemyFire(e); } }
+    if (!G.duel && !kaciyor && e.stun <= 0 && e.y < FY_TOP + 2 && e.y > FY_BOT + 9 && Math.abs(e.x) < FX + 1) { e.ft -= dt * G.fireMul; if (e.ft <= 0) { e.ft = ETYPES[e.type].fire * rand(0.85, 1.25); enemyFire(e); } }
     const disari = e.pat === 'behind' && !e.turned ? (e.y > SPAWN_Y + 20) : (e.y < FY_BOT - 8);
     if (disari || e.x < -FX - 18 || e.x > FX + 18 || e.y > SPAWN_Y + 40) { removeEnemyAt(i); continue; }
-    if (!e.ground) for (const p of G.players) {
+    if (!e.ground && !G.duel) for (const p of G.players) {
       if (!p.alive || p.inv > 0) continue;
       if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < (e.r + 0.8) ** 2) { hitPlayer(p, 30 * G.dmgMul); damageEnemy(e, 60 * G.hpMul, p.idx); break; }
     }
@@ -2038,13 +2084,6 @@ function updatePB(dt) {
         break;
       }
     }
-    if (!gone && G.duel) {
-      const hd = G.players.find(q => q.idx !== b.owner && q.alive);
-      if (hd) { const hx = cos ? hd.rx : hd.x, hy = cos ? hd.ry : hd.y;
-        if ((hx - b.x) ** 2 + (hy - b.y) ** 2 < (0.95 + b.r) ** 2) {
-          if (!cos) { const p = G.players[b.owner]; let d = b.dmg * 0.55; if (p && Math.random() < p.st.crit) d *= 2; if (Math.random() < 0.5) E(['h', r1(b.x), r1(b.y)]); hitPlayer(hd, d); } else fxHit(b.x, b.y);
-          gone = true; } }
-    }
     if (!gone && G.boss && !G.boss.dead && bossHit(b.x, b.y, b.r)) {
       if (!cos) { const p = G.players[b.owner]; let d = b.dmg; if (p && Math.random() < p.st.crit) d *= 2; damageBoss(d, b.owner, b.x, b.y); if (Math.random() < 0.3) E(['h', r1(b.x), r1(b.y)]); }
       else if (Math.random() < 0.3) fxHit(b.x, b.y);
@@ -2058,9 +2097,9 @@ function updateMissiles(dt) {
   for (let i = G.missiles.length - 1; i >= 0; i--) {
     const m = G.missiles[i]; m.life -= dt;
     let tx = null, ty = null, bd = 1e9;
-    for (const e of G.enemies) { const ex = cos ? e.rx : e.x, ey = cos ? e.ry : e.y; if (ey < m.y - 4 && m.life < 3.6) continue; const d = (ex - m.x) ** 2 + (ey - m.y) ** 2; if (d < bd) { bd = d; tx = ex; ty = ey; } }
+    const myon = (G.players[m.owner] && G.players[m.owner].yon) || 1;
+    for (const e of G.enemies) { const ex = cos ? e.rx : e.x, ey = cos ? e.ry : e.y; if ((ey - m.y) * myon < -4 && m.life < 3.6) continue; const d = (ex - m.x) ** 2 + (ey - m.y) ** 2; if (d < bd) { bd = d; tx = ex; ty = ey; } }
     if (G.boss && !G.boss.dead && !G.boss.entering) { const d = (G.boss.x - m.x) ** 2 + (G.boss.y - m.y) ** 2; if (d < bd) { bd = d; tx = G.boss.x; ty = G.boss.y; } }
-    if (G.duel) { const o = G.players.find(q => q.idx !== m.owner && q.alive && !(q.gizliT > 0)); if (o) { tx = cos ? o.rx : o.x; ty = cos ? o.ry : o.y; } }
     const sp = Math.min(36, Math.hypot(m.vx, m.vy) + 40 * dt);
     let a = Math.atan2(m.vy, m.vx);
     if (tx !== null) { const want = Math.atan2(ty - m.y, tx - m.x); let da = want - a; while (da > PI) da -= 2 * PI; while (da < -PI) da += 2 * PI; a += clamp(da, -6 * dt, 6 * dt); }
@@ -2069,7 +2108,6 @@ function updateMissiles(dt) {
     let hit = false;
     for (const e of G.enemies) { const ex = cos ? e.rx : e.x, ey = cos ? e.ry : e.y; if ((ex - m.x) ** 2 + (ey - m.y) ** 2 < (e.r + 0.4) ** 2) { hit = true; break; } }
     if (!hit && bossHit(m.x, m.y, 0.4)) hit = true;
-    if (!hit && G.duel) { const o = G.players.find(q => q.idx !== m.owner && q.alive); if (o) { const ox = cos ? o.rx : o.x, oy = cos ? o.ry : o.y; if ((ox - m.x) ** 2 + (oy - m.y) ** 2 < 1.5) hit = true; } }
     if (hit) { if (!cos) { areaDamage(m.x, m.y, 2.6, m.dmg, m.owner); E(['x', r1(m.x), r1(m.y), 0.8]); } }
     if (hit || m.life <= 0 || m.y > SPAWN_Y + 5 || m.y < FY_BOT - 5 || Math.abs(m.x) > FX + 10) G.missiles.splice(i, 1);
   }
@@ -2106,7 +2144,7 @@ function updateSim(dt) {
     G.waveT -= dt;
     if (G.waveT <= 0 && G.wavesDone < G.wavesTotal) { spawnWave(); if (G.players.length > 1 && Math.random() < 0.6) spawnWave(); G.wavesDone++; G.waveT = rand(2.3, 3.4) / (1 + (G.stage - 1) * 0.006) / (1 + (G.m - 1) * 0.08); }
     if (G.wavesDone >= G.wavesTotal && (G.enemies.length === 0 || G.waveT < -12)) {
-      if (G.hasBoss) { G.phase = 'warn'; G.warnT = 3.2; E(['s', 'alarm']); E(['msg', '⚠ UYARI ⚠<small>Bölüm sonu canavarı yaklaşıyor!</small>', 3]); }
+      if (G.hasBoss) { G.phase = 'warn'; G.warnT = 3.2; E(['s', 'alarm']); E(['msg', '⚠ BOSS GELİYOR ⚠<small>Bölüm sonu bossu yaklaşıyor, hazır ol!</small>', 3]); }
       else { G.phase = 'clear'; G.endT = 2.4; E(['msg', '✔ GÖREV ' + G.m + '/4 TAMAMLANDI', 2.2]); }
     }
     G.progress = Math.min(1, G.wavesDone / G.wavesTotal) * (G.hasBoss ? 0.8 : 0.97);
@@ -2141,7 +2179,8 @@ function applySnap(s) {
       else if (ev[0] === 'ft') { ev[2] = -ev[2]; ev[3] = A - ev[3]; }
       else if (ev[0] === 'm' || ev[0] === 'b') { ev[1] = -ev[1]; ev[2] = A - ev[2]; ev[3] = -ev[3]; ev[4] = -ev[4]; }
     });
-    if (s.dz) { G.skor = [s.dz[0], s.dz[1]]; G.raunt = s.dz[2]; }
+    s.e.forEach(a => { a[2] = -a[2]; a[3] = A - a[3]; });
+    if (s.dz) { G.skor = [s.dz[0], s.dz[1]]; G.raunt = s.dz[2]; G.puan = [s.dz[3] || 0, s.dz[4] || 0]; G.raundSure = s.dz[5] || 0; }
   }
   const seen = new Set();
   for (const a of s.e) {
@@ -2174,7 +2213,7 @@ function buildSnap() {
   s.p = G.players.map(p => [r1(p.x), r1(p.y), Math.round(p.hp), p.alive ? 1 : 0, r1(p.respawn), p.inv > 0 ? 1 : 0, p.power, p.firing ? 1 : 0, p.auxT > 0 ? 1 : 0]);
   const b = G.boss;
   s.bo = b ? (b.dead ? -1 : [r1(b.x), r1(b.y), Math.round(b.hp / b.maxHp * 1000), b.entering ? 1 : 0, b.flash > 0 ? 1 : 0, b.tur.reduce((m, t, i) => m | (t.alive ? 1 << i : 0), 0)]) : 0;
-  if (G.duel) s.dz = [G.skor[0], G.skor[1], G.raunt];
+  if (G.duel) s.dz = [G.skor[0], G.skor[1], G.raunt, G.puan[0], G.puan[1], r1(G.raundSure)];
   s.ev = G.netEv; G.netEv = [];
   return s;
 }
@@ -2292,8 +2331,8 @@ function updateHUD(dt) {
   $('#hpFill').style.width = (p.hp / p.st.maxHp * 100) + '%';
   $('#hpFill').style.background = p.hp / p.st.maxHp < 0.3 ? 'linear-gradient(90deg,#ff3b4f,#ff9a3c)' : '';
   $('#livesTxt').textContent = G.mode === 'single' ? '❤ x' + Math.max(0, G.lives) : '♾ YENİDEN DOĞMA';
-  $('#stageTxt').textContent = G.duel ? '⚔ SEN ' + G.skor[G.me] + ' - ' + G.skor[1 - G.me] + ' RAKİP · RAUNT ' + G.raunt : stageLabel(G.k);
-  { const rk = G.duel && G.players.find(q => q.idx !== G.me); $('#progFill').style.width = (rk ? Math.max(0, rk.hp / rk.st.maxHp) * 100 : G.progress * 100) + '%'; $('#progFill').style.background = rk ? 'linear-gradient(90deg,#ff3b4f,#ff9a3c)' : ''; }
+  $('#stageTxt').textContent = G.duel ? '🎯 SEN ' + (G.puan || [0, 0])[G.me] + ' - ' + (G.puan || [0, 0])[1 - G.me] + ' RAKİP · ⏱ ' + Math.ceil(G.raundSure || 0) + ' · R' + G.raunt + ' (' + G.skor[G.me] + '-' + G.skor[1 - G.me] + ')' : stageLabel(G.k);
+  { const rk = G.duel; $('#progFill').style.width = (rk ? Math.max(0, (G.raundSure || 0) / DUEL_SURE) * 100 : G.progress * 100) + '%'; $('#progFill').style.background = rk ? 'linear-gradient(90deg,#ffb020,#ffd84d)' : ''; }
   $('#hGold').textContent = fmt(p.run.gold); $('#hGems').textContent = fmt(p.run.gems);
   const showBoss = G.boss && !G.boss.dead && (G.phase === 'boss');
   $('#bossBar').classList.toggle('hidden', !showBoss);
@@ -2330,7 +2369,7 @@ function startGame(mode, stage, profs, me, duel) {
   const ms = G.missions.map(m => '• ' + m.txt).join('<br>');
   const diff = ['KOLAY', 'ORTA', 'ZOR', 'BOSS'][G.m - 1];
   if (!G.duel && G.gucK > 1.05) setTimeout(() => toast('⚖️ Düşmanlar uçağının gücüne göre güçlendi: can x' + G.gucK.toFixed(1) + ' · hasar x' + G.zirhK.toFixed(1), 3.5), 3800);
-  if (G.duel) centerMsg('⚔ DÜELLO · RAUNT 1<small>Rakibin karşıda! 3 raunttan 2\'sini kazanan maçı alır.</small>', 3.2); else centerMsg('LEVEL ' + G.L + ' · GÖREV ' + G.m + '/4<small>' + G.biome.name + ' Cephesi · Zorluk: ' + diff + (mode !== 'single' ? ' · ÇOK OYUNCULU' : '') + '<br><span style="font-size:.8em;color:#ffd451">GÖREVLER</span><br><span style="font-size:.75em">' + ms + '</span></small>', 3.6);
+  if (G.duel) centerMsg('🎯 AV DÜELLOSU · RAUNT 1<small>Ortadan geçen düşmanları rakibinden hızlı vur! Avcı 1, jet 2, helikopter 3, bombardıman 5 puan. ' + DUEL_SURE + ' saniyede çok puan alan raundu kazanır, 3 raunttan 2\'si maçı.</small>', 4); else centerMsg('LEVEL ' + G.L + ' · GÖREV ' + G.m + '/4<small>' + G.biome.name + ' Cephesi · Zorluk: ' + diff + (mode !== 'single' ? ' · ÇOK OYUNCULU' : '') + '<br><span style="font-size:.8em;color:#ffd451">GÖREVLER</span><br><span style="font-size:.75em">' + ms + '</span></small>', 3.6);
   sfx.whoosh();
 }
 function finishStage(win) {
@@ -2361,7 +2400,7 @@ function showResult(win, opt = {}) {
   save();
   win ? sfx.win() : sfx.lose(); if (lv) setTimeout(() => sfx.levelup(), 900);
   const title = win ? (G.hasBoss ? '🏆 LEVEL ' + G.L + ' TAMAMLANDI!' : '✔ GÖREV TAMAMLANDI!') : (opt.quit ? '🛬 ÜSSE DÖNÜŞ' : '💥 GÖREV BAŞARISIZ');
-  let h = `<h2>${title}</h2><p style="text-align:center;margin:0 0 10px">${stageLabel(k)} · ${G.biome.name}${bt != null && win && G.hasBoss ? ' · Canavar ' + Math.round(bt) + ' sn' : ''}</p>`;
+  let h = `<h2>${title}</h2><p style="text-align:center;margin:0 0 10px">${stageLabel(k)} · ${G.biome.name}${bt != null && win && G.hasBoss ? ' · Boss ' + Math.round(bt) + ' sn' : ''}</p>`;
   h += `<div class="resRow"><span>✈️ Düşürülen düşman</span><b>${r.kills}</b></div>`;
   h += `<div class="resRow"><span>💰 Toplanan altın</span><b class="gold">+${fmt(r.gold)}</b></div>`;
   if (win) h += `<div class="resRow"><span>🎖️ Görev bonusu</span><b class="gold">+${fmt(clearGold)}</b></div>`;
@@ -2856,7 +2895,7 @@ function renderMp() {
       <div class="secT" style="margin-top:12px">OYUN MODU ${host ? '' : '<span style="color:var(--mut);font-size:11px">(Kaptan seçer)</span>'}</div>
       <div class="optGrid" style="grid-template-columns:1fr 1fr">
         <button class="opt ${Net.mod === 'takim' ? 'on' : ''}" data-m="mod_takim" ${host ? '' : 'disabled'}><span class="oi">🤝</span><b>Takım (Co-op)</b><small>Birlikte düşmanlara ve boss'a karşı. Vurulan 5 sn'de yeniden doğar.</small></button>
-        <button class="opt ${Net.mod === 'duello' ? 'on' : ''}" data-m="mod_duello" ${host ? '' : 'disabled'}><span class="oi">⚔️</span><b>Düello (VS)</b><small>Karşı karşıya 1'e 1. 3 raunttan 2'sini kazanan alır.</small></button>
+        <button class="opt ${Net.mod === 'duello' ? 'on' : ''}" data-m="mod_duello" ${host ? '' : 'disabled'}><span class="oi">⚔️</span><b>Av Düellosu (VS)</b><small>Ortadan geçen düşmanları rakibinden hızlı vur. Birbirinize ateş edilmez, 3 raunttan 2'sini kazanan alır.</small></button>
       </div>
       <p style="text-align:center;font-size:15px;margin:8px 0">Uçak/pilot/mühimmat değiştirmek için hangarı düzenleyin — eşinize otomatik iletilir.</p>
       <div class="mBtns">${host ? `<button class="btn go" data-m="start">${Net.mod === 'duello' ? '⚔️ DÜELLOYU BAŞLAT' : '🛫 BİRLİKTE KALKIŞ · ' + stageLabel(S.stage)}</button>` : `<button class="btn" disabled>⏳ Kaptanın kalkışı bekleniyor…</button>`}</div>
